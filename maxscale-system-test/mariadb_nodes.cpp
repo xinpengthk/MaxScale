@@ -316,11 +316,21 @@ void Mariadb_nodes::change_master(int NewMaster, int OldMaster)
 
 int Mariadb_nodes::stop_node(int node)
 {
+    if (docker)
+    {
+        return docker_compose("kill %s_%03d", prefix, node);
+    }
+
     return ssh_node(node, stop_db_command[node], true);
 }
 
 int Mariadb_nodes::start_node(int node, const char* param)
 {
+    if (docker)
+    {
+        return docker_compose("up -d %s_%03d", prefix, node);
+    }
+
     char cmd[1024];
     if (v51)
     {
@@ -562,6 +572,11 @@ int Mariadb_nodes::clean_iptables(int node)
 
 int Mariadb_nodes::block_node(int node)
 {
+    if (docker)
+    {
+        return docker_compose("pause %s_%03d", prefix, node);
+    }
+
     int local_result = 0;
 
     local_result += ssh_node_f(node, true,
@@ -574,6 +589,11 @@ int Mariadb_nodes::block_node(int node)
 
 int Mariadb_nodes::unblock_node(int node)
 {
+    if (docker)
+    {
+        return docker_compose("unpause %s_%03d", prefix, node);
+    }
+
     int local_result = 0;
     local_result += clean_iptables(node);
     local_result += ssh_node_f(node, true,
@@ -702,7 +722,7 @@ bool Mariadb_nodes::bad_slave_thread_status(MYSQL* conn, const char* field, int 
 
 static bool wrong_replication_type(MYSQL* conn)
 {
-    bool rval = true;
+    bool rval = false;
 
     for (int i = 0; i < 2; i++)
     {
@@ -711,11 +731,10 @@ static bool wrong_replication_type(MYSQL* conn)
         if (find_field(conn, "SHOW SLAVE STATUS", "Gtid_IO_Pos", str) == 0)
         {
             // If the test requires GTID based replication, Gtid_IO_Pos must not be empty
-            if ((rval = (*str != '\0') != g_require_gtid))
+            if (g_require_gtid && *str == '\0')
             {
-                printf("Wrong value for 'Gtid_IO_Pos' (%s), expected it to be %s.\n",
-                       str,
-                       g_require_gtid ? "not empty" : "empty");
+                rval = true;
+                printf("Wrong value for 'Gtid_IO_Pos' (%s), expected it to be not empty.\n", str);
             }
             else
             {
@@ -827,6 +846,19 @@ bool Mariadb_nodes::fix_replication()
     {
         cout << prefix << ": Replication is broken, fixing..." << endl;
         rval = false;
+
+        if (docker)
+        {
+            cout << "Recreating containers" << endl;
+            docker_compose("unpause");
+            docker_compose("down -t 1 -v");
+            docker_compose("up -d");
+            refresh_container_ips();
+            cout << "Waiting for all nodes to start up" << endl;
+            robust_connect(60);
+            cout << "Done" << endl;
+            return check_replication() == 0;
+        }
 
         if (unblock_all_nodes() == 0)
         {
@@ -1159,6 +1191,11 @@ std::string Mariadb_nodes::get_lowest_version()
 
 int Mariadb_nodes::truncate_mariadb_logs()
 {
+    if (docker)
+    {
+        return 0;
+    }
+
     int local_result = 0;
     for (int node = 0; node < N; node++)
     {
@@ -1383,10 +1420,21 @@ void Mariadb_nodes::reset_server_settings(int node)
     std::string cnfdir = std::string(test_dir) + "/mdbci/cnf/";
     std::string cnf = get_config_name(node);
 
-    // Note: This is a CentOS specific path
-    ssh_node(node, "sudo rm -rf /etc/my.cnf.d/*", true);
-    copy_to_node(node, (cnfdir + cnf).c_str(), "~/");
-    ssh_node_f(node, false, "sudo mv ~/%s /etc/my.cnf.d/", cnf.c_str());
+    if (docker)
+    {
+        char cmd[1024];
+        sprintf(cmd, "rm %s/docker-compose/my.cnf.d/%s_%03d/*", test_dir, prefix, node);
+        system(cmd);
+        sprintf(cmd, "cp %s %s/docker-compose/my.cnf.d/%s_%03d/", (cnfdir + cnf).c_str(), test_dir, prefix, node);
+        system(cmd);
+    }
+    else
+    {
+        // Note: This is a CentOS specific path
+        ssh_node(node, "sudo rm -rf /etc/my.cnf.d/*", true);
+        copy_to_node(node, (cnfdir + cnf).c_str(), "~/");
+        ssh_node_f(node, false, "sudo mv ~/%s /etc/my.cnf.d/", cnf.c_str());
+    }
 }
 
 void Mariadb_nodes::reset_server_settings()

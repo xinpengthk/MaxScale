@@ -7,6 +7,8 @@
 #include <set>
 #include <string>
 
+#include "templates.h"
+
 #include <maxbase/ccdefs.hh>
 
 typedef std::set<std::string> StringSet;
@@ -89,6 +91,9 @@ public:
      * @brief Verbose command output
      */
     bool verbose;
+
+    // Are we using docker containers?
+    bool docker = false;
 
     /**
      * @brief Get IP address
@@ -174,8 +179,36 @@ public:
      */
     int read_basic_env();
 
+    //
+    // Docker related commands
+    //
+
+    static void refresh_container_ips();
+
+    /**
+     * Execute a docker-compose command
+     *
+     * @param cmd Command to execute without the docker-compose prefix
+     *
+     * @return Return code of the command
+     */
+    int docker_compose(const char* format, ...) mxb_attribute((format(printf, 2, 3)));
+
+    void start_container(int i = 0);
+
+    void stop_container(int i = 0);
+
+    void restart_container(int i = 0);
+
+    void purge_container(int i = 0);
+
 private:
     int check_node_ssh(int node);
+    void refresh_container_ip();
 };
+
+// Helpers for extraction information from Docker
+int get_container_port(const std::string& name);
+std::string get_container_ip(const std::string& name);
 
 #endif      // NODES_H

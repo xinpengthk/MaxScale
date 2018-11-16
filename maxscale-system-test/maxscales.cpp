@@ -225,14 +225,14 @@ int Maxscales::close_maxscale_connections(int m)
 
 int Maxscales::restart_maxscale(int m)
 {
-    int res = ssh_node(m, "service maxscale restart", true);
+    int res = ssh_node(m, startup_command(), true);
     fflush(stdout);
     return res;
 }
 
 int Maxscales::stop_maxscale(int m)
 {
-    int res = ssh_node(m, "service maxscale stop", true);
+    int res = ssh_node(m, shutdown_command(), true);
     fflush(stdout);
     return res;
 }

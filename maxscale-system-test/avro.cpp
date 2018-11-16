@@ -31,10 +31,10 @@ int main(int argc, char* argv[])
     test.maxscales->ssh_node(0, (char*) "rm -rf /var/lib/maxscale/avro", true);
 
     /** Start master to binlogrouter replication */
-    test.replicate_from_master();
+    test.expect(test.replicate_from_master(), "Replication should work");
 
     test.set_timeout(120);
-    test.repl->connect();
+    test.expect(test.repl->connect() == 0, "Failed to connect");
 
     // MXS-2095: Crash on GRANT CREATE TABLE
     execute_query(test.repl->nodes[0], "CREATE USER test IDENTIFIED BY 'test'");

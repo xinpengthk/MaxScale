@@ -1,0 +1,71 @@
+version: '2.2'
+services:
+    maxscale_000:
+        init: true
+        cap_add:
+            - SYS_PTRACE
+        build: maxscale
+        container_name: maxscale_000
+        volumes:
+            - ./maxscale_000/:/var/log/maxscale/
+            - ./maxscale_000/:/tmp
+        ports:
+            - 4006:4006
+            - 4008:4008
+            - 4009:4009
+            - 4001:4001
+        command: sleep 31536000
+
+    node_000:
+        build: mariadb
+        container_name: node_000
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: Y
+        ports:
+            - 3000:3306
+        volumes:
+            - ./sql/master:/docker-entrypoint-initdb.d
+            - ./my.cnf.d/node_000:/etc/mysql/conf.d
+        command: mysqld --log-bin=mar-bin --binlog-format=ROW --server-id=3000 --log-slave-updates --skip-name-resolve
+
+    node_001:
+        build: mariadb
+        container_name: node_001
+        depends_on:
+            - node_000
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: Y
+        ports:
+            - 3001:3306
+        volumes:
+            - ./sql/slave:/docker-entrypoint-initdb.d
+            - ./my.cnf.d/node_001:/etc/mysql/conf.d
+        command: mysqld --log-bin=mar-bin --binlog-format=ROW --server-id=3001 --log-slave-updates --skip-name-resolve
+
+    node_002:
+        build: mariadb
+        container_name: node_002
+        depends_on:
+            - node_000
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: Y
+        ports:
+            - 3002:3306
+        volumes:
+            - ./sql/slave:/docker-entrypoint-initdb.d
+            - ./my.cnf.d/node_002:/etc/mysql/conf.d
+        command: mysqld --log-bin=mar-bin --binlog-format=ROW --server-id=3002 --log-slave-updates --skip-name-resolve
+
+    node_003:
+        build: mariadb
+        container_name: node_003
+        depends_on:
+            - node_000
+        environment:
+            MYSQL_ALLOW_EMPTY_PASSWORD: Y
+        ports:
+            - 3003:3306
+        volumes:
+            - ./sql/slave:/docker-entrypoint-initdb.d
+            - ./my.cnf.d/node_003:/etc/mysql/conf.d
+        command: mysqld --log-bin=mar-bin --binlog-format=ROW --server-id=3003 --log-slave-updates --skip-name-resolve

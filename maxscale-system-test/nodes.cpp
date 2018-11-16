@@ -2,9 +2,16 @@
 #include <string>
 #include <cstring>
 #include <iostream>
+#include <vector>
+
+using std::cout;
+using std::endl;
+
+std::vector<Nodes*> all_nodes;
 
 Nodes::Nodes()
 {
+    all_nodes.push_back(this);
 }
 
 int Nodes::check_node_ssh(int node)
@@ -41,7 +48,12 @@ int Nodes::check_nodes()
 
 void Nodes::generate_ssh_cmd(char* cmd, int node, const char* ssh, bool sudo)
 {
-    if (strcmp(IP[node], "127.0.0.1") == 0)
+    if (docker)
+    {
+        sprintf(cmd, "docker exec --privileged %s -t %s_%03d bash -c 'cd /home/vagrant/;%s'", sudo ? "" : "--user=vagrant",
+                prefix, node, ssh);
+    }
+    else if (strcmp(IP[node], "127.0.0.1") == 0)
     {
         if (sudo)
         {
@@ -114,8 +126,8 @@ char* Nodes::ssh_node_output(int node, const char* ssh, bool sudo, int* exit_cod
     char* cmd = (char*)malloc(strlen(ssh) + 1024);
 
     generate_ssh_cmd(cmd, node, ssh, sudo);
-// tprintf("############ssh smd %s\n:", cmd);
-    FILE* output = popen(cmd, "r");
+
+    FILE *output = popen(cmd, "r");
     if (output == NULL)
     {
         printf("Error opening ssh %s\n", strerror(errno));
@@ -150,7 +162,12 @@ int Nodes::ssh_node(int node, const char* ssh, bool sudo)
 {
     char* cmd = (char*)malloc(strlen(ssh) + 1024);
 
-    if (strcmp(IP[node], "127.0.0.1") == 0)
+    if (docker)
+    {
+        sprintf(cmd, "docker exec %s --privileged -i %s_%03d bash %s",
+                sudo ? "" : "--user vagrant", prefix, node, verbose ? "" :  " > /dev/null");
+    }
+    else if (strcmp(IP[node], "127.0.0.1") == 0)
     {
         printf("starting bash\n");
         sprintf(cmd, "bash");
@@ -172,9 +189,9 @@ int Nodes::ssh_node(int node, const char* ssh, bool sudo)
         if (sudo)
         {
             fprintf(in, "sudo su -\n");
-            fprintf(in, "cd /home/%s\n", access_user[node]);
         }
 
+        fprintf(in, "cd /home/%s\n", access_user[node]);
         fprintf(in, "%s\n", ssh);
         rc = pclose(in);
     }
@@ -223,7 +240,11 @@ int Nodes::copy_to_node(int i, const char* src, const char* dest)
     }
     char sys[strlen(src) + strlen(dest) + 1024];
 
-    if (strcmp(IP[i], "127.0.0.1") == 0)
+    if (docker)
+    {
+        sprintf(sys, "docker cp -a %s %s_%03d:%s", src, prefix, i, dest);
+    }
+    else if (strcmp(IP[i], "127.0.0.1") == 0)
     {
         sprintf(sys,
                 "cp %s %s",
@@ -263,7 +284,12 @@ int Nodes::copy_from_node(int i, const char* src, const char* dest)
         return 1;
     }
     char sys[strlen(src) + strlen(dest) + 1024];
-    if (strcmp(IP[i], "127.0.0.1") == 0)
+
+    if (docker)
+    {
+        sprintf(sys, "docker cp -a %s_%03d:%s %s", prefix, i, src, dest);
+    }
+    else if (strcmp(IP[i], "127.0.0.1") == 0)
     {
         sprintf(sys,
                 "cp %s %s",
@@ -294,13 +320,168 @@ int Nodes::copy_from_node_legacy(const char* src, const char* dest, int i)
     return copy_from_node(i, src, dest);
 }
 
+void Nodes::refresh_container_ip()
+{
+    for (int i = 0; i < N; i++)
+    {
+        char name[1024];
+        sprintf(name, "%s_%03d", prefix, i);
+        std::string ip = get_container_ip(name);
+        sprintf(IP[i], "%s", ip.c_str());
+        sprintf(IP_private[i], "%s", ip.c_str());
+        sprintf(IP6[i], "%s", ip.c_str());
+    }
+}
+
+void Nodes::refresh_container_ips()
+{
+    for (auto a : all_nodes)
+    {
+        a->refresh_container_ip();
+    }
+}
+
+std::string get_container_ip(const std::string& name)
+{
+    char cmd[2048];
+    sprintf(cmd, "docker inspect %s -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
+            name.c_str());
+    FILE *in = popen(cmd, "r");
+    std::string rval;
+
+    if (in)
+    {
+        size_t n = fread(cmd, 1, sizeof(cmd), in);
+
+        // Skip trailing newline
+        rval.assign(cmd, n - 1);
+        pclose(in);
+    }
+    else
+    {
+        exit(1);
+    }
+
+    return rval;
+}
+
+// Note: This only works if the container has one port
+int get_container_port(const std::string& name)
+{
+    char cmd[2048];
+    sprintf(cmd, "docker inspect %s -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'",
+            name.c_str());
+    FILE *in = popen(cmd, "r");
+    int rval;
+
+    if (in)
+    {
+        size_t n = fread(cmd, 1, sizeof(cmd), in);
+        cmd[n] = '\0';
+        pclose(in);
+        rval = atoi(cmd);
+    }
+
+    return rval;
+}
+
+// Calculate how many containers of this type there are
+int get_container_count(const char* prefix)
+{
+    char cmd[2048];
+    sprintf(cmd, "bash -c 'cd %s/docker-compose/; docker-compose ps --services|grep -c %s'",
+            test_dir, prefix);
+    FILE *in = popen(cmd, "r");
+    int rval;
+
+    if (in)
+    {
+        size_t n = fread(cmd, 1, sizeof(cmd), in);
+        cmd[n] = '\0';
+        pclose(in);
+        rval = atoi(cmd);
+    }
+
+    return rval;
+}
+
+void Nodes::start_container(int i)
+{
+    docker_compose("up -d %s_%03d", prefix, i);
+    refresh_container_ip();
+}
+
+void Nodes::stop_container(int i)
+{
+    docker_compose("kill %s_%03d", prefix, i);
+}
+
+void Nodes::restart_container(int i)
+{
+    stop_container(i);
+    start_container(i);
+}
+
+void Nodes::purge_container(int i)
+{
+    docker_compose("rm -vfs %s_%03d", prefix, i);
+    start_container(i);
+}
+
+int Nodes::docker_compose(const char* format, ...)
+{
+    va_list valist;
+
+    va_start(valist, format);
+    int message_len = vsnprintf(NULL, 0, format, valist);
+    va_end(valist);
+
+    if (message_len < 0)
+    {
+        return -1;
+    }
+
+    char* sys = (char*)malloc(message_len + 1);
+
+    va_start(valist, format);
+    vsnprintf(sys, message_len + 1, format, valist);
+    va_end(valist);
+
+    int rc = -1;
+    FILE* in = popen("bash", "w");
+
+    if (in)
+    {
+        fprintf(in, "cd %s/docker-compose; docker-compose %s\n", test_dir, sys);
+        rc = pclose(in);
+
+        if (WIFEXITED(rc))
+        {
+            rc = WEXITSTATUS(rc);
+        }
+    }
+
+    free(sys);
+
+    return rc;
+}
+
 int Nodes::read_basic_env()
 {
+    if (getenv("USING_DOCKER"))
+    {
+        docker = true;
+    }
+
     char* env;
     char env_name[64];
     sprintf(env_name, "%s_N", prefix);
     env = getenv(env_name);
-    if (env != NULL)
+    if (docker)
+    {
+        N = get_container_count(prefix);
+    }
+    else if (env != NULL)
     {
         sscanf(env, "%d", &N);
     }
@@ -380,7 +561,18 @@ int Nodes::read_basic_env()
             {
                 sprintf(IP6[i], "%s", IP[i]);
             }
-            // reading sshkey
+
+            if (docker)
+            {
+                char name[1024];
+                sprintf(name, "%s_%03d", prefix, i);
+                std::string ip = get_container_ip(name);
+                sprintf(IP[i], "%s", ip.c_str());
+                sprintf(IP_private[i], "%s", ip.c_str());
+                sprintf(IP6[i], "%s", ip.c_str());
+            }
+
+            //reading sshkey
             sprintf(env_name, "%s_%03d_keyfile", prefix, i);
             env = getenv(env_name);
             if (env == NULL)

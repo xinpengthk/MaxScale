@@ -319,6 +319,22 @@ public:
      * @param m Number of Maxscale node
      */
     void wait_for_monitor(int intervals = 1, int m = 0);
+
+    const char* startup_command() const
+    {
+        // These commands must have trailing semicolons if they do something
+        static const char* NORMAL_START_CMD = "service maxscale restart;";
+        static const char* DOCKER_START_CMD = "pkill -9 maxscale; nohup maxscale -Umaxscale;";
+        return docker ? DOCKER_START_CMD : NORMAL_START_CMD;
+    }
+
+    const char* shutdown_command() const
+    {
+        // These commands must have trailing semicolons if they do something
+        static const char* NORMAL_STOP_CMD = "service maxscale stop;";
+        static const char* DOCKER_STOP_CMD = "pkill -9 maxscale;";
+        return docker ? DOCKER_STOP_CMD : NORMAL_STOP_CMD;
+    }
 };
 
 #endif      // MAXSCALES_H

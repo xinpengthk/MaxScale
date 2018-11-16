@@ -15,13 +15,13 @@
 
 using namespace std;
 
-const char* only_root = "Enabled Linux accounts (secure)    : root\n";
-const char* user_added = "The Linux user %s has successfully been enabled.\n";
-const char* user_removed = "The Linux user %s has successfully been disabled.\n";
+const char* only_root = "Enabled Linux accounts (secure)    : root";
+const char* user_added = "The Linux user %s has successfully been enabled.";
+const char* user_removed = "The Linux user %s has successfully been disabled.";
 const char* remove_last_admin = "Cannot remove the last admin account";
-const char* root_added = "User root has been successfully added.\n";
-const char* user_and_root = "Enabled Linux accounts (secure)    : root, %s\n";
-const char* user_only = "Enabled Linux accounts (secure)    : root, %s\n";
+const char* root_added = "User root has been successfully added.";
+const char* user_and_root = "Enabled Linux accounts (secure)    : root, %s";
+const char* user_only = "Enabled Linux accounts (secure)    : root, %s";
 
 void add_remove_maxadmin_user(TestConnections* Test)
 {

@@ -127,6 +127,11 @@ TestConnections::TestConnections(int argc, char* argv[])
 
     read_env();
 
+    if (getenv("USING_DOCKER"))
+    {
+        no_galera = true;
+    }
+
     char* gal_env = getenv("galera_000_network");
     if ((gal_env == NULL) || (strcmp(gal_env, "") == 0 ))
     {
@@ -736,13 +741,15 @@ void TestConnections::init_maxscale(int m)
 
         char str[4096];
         char dtr[4096];
-        sprintf(str, "%s/ssl-cert/*", test_dir);
+        sprintf(str, "%s/ssl-cert/", test_dir);
         sprintf(dtr, "%s/certs/", maxscales->access_homedir[m]);
         maxscales->copy_to_node_legacy(str, dtr, m);
         sprintf(str, "cp %s/ssl-cert/* .", test_dir);
         system(str);
         maxscales->ssh_node_f(m, true, "chmod -R a+rx %s;", maxscales->access_homedir[m]);
     }
+
+    const char* start_cmd = maxscale::start ? maxscales->startup_command() : "";
 
     maxscales->ssh_node_f(m,
                           true,
@@ -753,7 +760,7 @@ void TestConnections::init_maxscale(int m)
                           "maxctrl api get maxscale/debug/monitor_wait",
                           maxscales->maxscale_cnf[m],
                           maxscales->maxscale_log_dir[m],
-                          maxscale::start ? "service maxscale restart;" : "");
+                          start_cmd);
 }
 
 void TestConnections::copy_one_mariadb_log(int i, std::string filename)
@@ -781,8 +788,8 @@ int TestConnections::copy_mariadb_logs(Mariadb_nodes* repl,
     {
         for (int i = 0; i < repl->N; i++)
         {
-            if (strcmp(repl->IP[i], "127.0.0.1") != 0)      // Do not copy MariaDB logs in case of local
-                                                            // backend
+            // Do not copy MariaDB logs in case of local or docker backend
+            if (strcmp(repl->IP[i], "127.0.0.1") != 0 && !repl->docker)
             {
                 char str[4096];
                 sprintf(str, "LOGS/%s/%s%d_mariadb_log", test_name, prefix, i);
@@ -842,7 +849,14 @@ int TestConnections::copy_maxscale_logs(double timestamp)
         sprintf(log_dir_i, "%s/%03d", log_dir, i);
         sprintf(sys, "mkdir -p %s", log_dir_i);
         system(sys);
-        if (strcmp(maxscales->IP[i], "127.0.0.1") != 0)
+
+        if (maxscales->docker)
+        {
+            sprintf(sys, "mv -f %s/docker-compose/%s_%03d/* -t %s",
+                    test_dir, maxscales->prefix, i, log_dir_i);
+            return system(sys);
+        }
+        else if (strcmp(maxscales->IP[i], "127.0.0.1") != 0)
         {
             int rc = maxscales->ssh_node_f(i, true,
                                   "rm -rf %s/logs;"
@@ -894,9 +908,7 @@ int TestConnections::prepare_binlog(int m)
     tprintf("Master server version '%s'", version_str);
 
     if (*version_str
-        && strstr(version_str, "10.0") == NULL
-        && strstr(version_str, "10.1") == NULL
-        && strstr(version_str, "10.2") == NULL)
+        && strstr(version_str, "10.") == NULL)
     {
         add_result(maxscales->ssh_node_f(m,
                                          true,
@@ -915,12 +927,9 @@ int TestConnections::prepare_binlog(int m)
         add_result(maxscales->ssh_node_f(m, true, "mkdir -p %s", maxscales->maxscale_binlog_dir[m]),
                    "Creating binlog data dir failed");
         tprintf("Set 'maxscale' as a owner of binlog dir");
-        add_result(maxscales->ssh_node_f(m,
-                                         false,
-                                         "%s mkdir -p %s; %s chown maxscale:maxscale -R %s",
-                                         maxscales->access_sudo[m],
+        add_result(maxscales->ssh_node_f(m, true,
+                                         "mkdir -p %s; chown maxscale:maxscale -R %s",
                                          maxscales->maxscale_binlog_dir[m],
-                                         maxscales->access_sudo[m],
                                          maxscales->maxscale_binlog_dir[m]),
                    "directory ownership change failed");
     }
@@ -1146,9 +1155,9 @@ bool TestConnections::replicate_from_master(int m)
     repl->execute_query_all_nodes("STOP SLAVE");
 
     /** Clean up MaxScale directories */
-    maxscales->ssh_node(m, "service maxscale stop", true);
+    maxscales->stop();
     prepare_binlog(m);
-    maxscales->ssh_node(m, "service maxscale start", true);
+    maxscales->start();
 
     char log_file[256] = "";
     char log_pos[256] = "4";
