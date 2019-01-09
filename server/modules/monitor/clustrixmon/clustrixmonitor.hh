@@ -43,6 +43,8 @@ public:
         long m_cluster_monitor_interval;
     };
 
+    ~ClustrixMonitor();
+
     static ClustrixMonitor* create(MXS_MONITOR* pMonitor);
 
     bool configure(const MXS_CONFIG_PARAMETER* pParams) override;
@@ -59,6 +61,7 @@ private:
 
 private:
     Config                   m_config;
+    std::vector<std::string> m_config_servers;
     mxb::http::Async         m_http;
     std::vector<std::string> m_health_urls;
     uint32_t                 m_delayed_http_check_id;

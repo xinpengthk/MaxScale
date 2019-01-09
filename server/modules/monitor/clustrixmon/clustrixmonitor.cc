@@ -12,6 +12,70 @@
  */
 
 #include "clustrixmonitor.hh"
+#include <algorithm>
+
+namespace
+{
+
+template<class T>
+class intrusive_slist_iterator : public std::iterator<std::input_iterator_tag, T>
+{
+public:
+    explicit intrusive_slist_iterator(T& t)
+        : m_pT(&t)
+    {
+    }
+
+    explicit intrusive_slist_iterator()
+        : m_pT(nullptr)
+    {
+    }
+
+    intrusive_slist_iterator& operator++()
+    {
+        mxb_assert(m_pT);
+        m_pT = m_pT->next;
+        return *this;
+    }
+
+    intrusive_slist_iterator& operator++(int)
+    {
+        intrusive_slist_iterator prev(*this);
+        ++(*this);
+        return prev;
+    }
+
+    bool operator == (const intrusive_slist_iterator& rhs) const
+    {
+        return m_pT == rhs.m_pT;
+    }
+
+    bool operator != (const intrusive_slist_iterator& rhs) const
+    {
+        return !(m_pT == rhs.m_pT);
+    }
+
+    T& operator * () const
+    {
+        mxb_assert(m_pT);
+        return *m_pT;
+    }
+
+private:
+    T* m_pT;
+};
+
+intrusive_slist_iterator<MXS_MONITORED_SERVER> begin(MXS_MONITORED_SERVER& monitored_server)
+{
+    return intrusive_slist_iterator<MXS_MONITORED_SERVER>(monitored_server);
+}
+
+intrusive_slist_iterator<MXS_MONITORED_SERVER> end(MXS_MONITORED_SERVER& monitored_server)
+{
+    return intrusive_slist_iterator<MXS_MONITORED_SERVER>();
+}
+
+}
 
 namespace http = mxb::http;
 using namespace std;
@@ -19,6 +83,10 @@ using namespace std;
 ClustrixMonitor::ClustrixMonitor(MXS_MONITOR* pMonitor)
     : maxscale::MonitorInstance(pMonitor)
     , m_delayed_http_check_id(0)
+{
+}
+
+ClustrixMonitor::~ClustrixMonitor()
 {
 }
 
@@ -35,6 +103,22 @@ bool ClustrixMonitor::configure(const MXS_CONFIG_PARAMETER* pParams)
     m_config.set_cluster_monitor_interval(config_get_integer(pParams, CLUSTER_MONITOR_INTERVAL_NAME));
 
     MXS_MONITORED_SERVER* pMonitored_server = m_monitor->monitored_servers;
+
+    if (pMonitored_server)
+    {
+        std::transform(begin(*pMonitored_server), end(*pMonitored_server),
+                       std::back_inserter(m_config_servers),
+                       [](const MXS_MONITORED_SERVER& monitored_server) {
+                           return monitored_server.server->address;
+                       });
+    }
+
+    for_each(m_config_servers.begin(),
+             m_config_servers.end(),
+             [](const std::string& s)
+             {
+                 MXS_NOTICE("Server: %s", s.c_str());
+             });
 
     while (pMonitored_server)
     {
