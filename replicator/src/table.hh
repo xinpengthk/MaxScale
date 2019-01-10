@@ -23,13 +23,6 @@
 
 #include "config.hh"
 
-namespace cdc
-{
-
-namespace real
-{
-// Private namespace for implementation details
-
 /**
  * A class that converts replicated row events into ColumnStore bulk API writes.
  */
@@ -46,7 +39,7 @@ public:
      *
      * @return The opened table
      */
-    static std::unique_ptr<Table> open(const Config& cnf, MARIADB_RPL_EVENT* table_map);
+    static std::unique_ptr<Table> open(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
 
     /**
      * Queue an event for processing
@@ -73,7 +66,7 @@ private:
     using Driver = std::unique_ptr<mcsapi::ColumnStoreDriver>;
     using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
 
-    Table(const Config& cnf, MARIADB_RPL_EVENT* table_map);
+    Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
     bool process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
 
     MARIADB_RPL_EVENT*              m_tm;           // The table map event, used in the conversion process
@@ -84,5 +77,3 @@ private:
     std::mutex                      m_queue_lock;   // Protects use of m_queue
     std::mutex                      m_process_lock; // Prevents concurrent calls to Table::process
 };
-}
-}

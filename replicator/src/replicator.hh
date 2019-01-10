@@ -16,6 +16,8 @@
 #include <string>
 #include <memory>
 
+#include "config.hh"
+
 namespace cdc
 {
 
@@ -38,7 +40,7 @@ public:
      * @return On success, an empty string is returned and the new Replicator instance is stored in
      *         the unique_ptr. If an error occurred, the string contains the error description.
      */
-    static std::pair<std::string, std::unique_ptr<Replicator>> start(const std::string& cnf);
+    static std::pair<std::string, std::unique_ptr<Replicator>> start(const Config& cnf);
 
     /**
      * Stops a running replication stream

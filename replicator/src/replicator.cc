@@ -27,7 +27,6 @@
 
 // Private headers
 #include "table.hh"
-#include "config.hh"
 
 namespace cdc
 {
@@ -47,7 +46,7 @@ public:
     Replicator(Replicator&) = delete;
 
     // Creates a new replication stream and starts it
-    static std::pair<std::string, std::unique_ptr<Replicator>> start(const std::string& cnf);
+    static std::pair<std::string, std::unique_ptr<Replicator>> start(const Config& cnf);
 
     // Stops a running replication stream
     void stop();
@@ -83,22 +82,19 @@ Replicator::Replicator(const Config& cnf)
 }
 
 // static
-std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const std::string& path)
+std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Config& config)
 {
-    std::unique_ptr<Replicator> rval;
-    Config config;
+    std::unique_ptr<Replicator> rval(new(std::nothrow) Replicator(config));
     std::string err;
 
-    std::tie(err, config) = process_options(path);
-
-    if (err.empty())
+    if (!rval)
     {
-        rval.reset(new(std::nothrow) Replicator(config));
-
-        if (rval && !rval->run())
-        {
-            rval.reset();
-        }
+        err = "Memory allocation failed";
+    }
+    else if (!rval->run())
+    {
+        err = rval->error();
+        rval.reset();
     }
 
     return {err, std::move(rval)};
@@ -243,12 +239,12 @@ Replicator::~Replicator()
 //
 
 // static
-std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const std::string& path)
+std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Config& cnf)
 {
     std::unique_ptr<Replicator> rval;
     std::unique_ptr<real::Replicator> real;
     std::string error;
-    std::tie(error, real) = real::Replicator::start(path);
+    std::tie(error, real) = real::Replicator::start(cnf);
 
     if (real)
     {

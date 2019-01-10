@@ -13,13 +13,7 @@
 
 #include "table.hh"
 
-namespace cdc
-{
-
-namespace real
-{
-
-Table::Table(const Config& cnf, MARIADB_RPL_EVENT* table_map)
+Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     : m_tm(table_map)
     , m_table(m_tm->event.table_map.table.str, m_tm->event.table_map.table.length)
     , m_database(m_tm->event.table_map.database.str, m_tm->event.table_map.database.length)
@@ -28,7 +22,7 @@ Table::Table(const Config& cnf, MARIADB_RPL_EVENT* table_map)
 }
 
 // static
-std::unique_ptr<Table> Table::open(const Config& cnf, MARIADB_RPL_EVENT* table_map)
+std::unique_ptr<Table> Table::open(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
 {
     return std::unique_ptr<Table>(new Table(cnf, table_map));
 }
@@ -166,6 +160,4 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 Table::~Table()
 {
     mariadb_free_rpl_event(m_tm);
-}
-}
 }
