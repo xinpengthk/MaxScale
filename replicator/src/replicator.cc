@@ -31,22 +31,16 @@
 namespace cdc
 {
 
-namespace real
-{
 
-//
-// Private implementation details
-//
-
-// The main class that drives the whole conversion process
-class Replicator
+// A very small daemon. The main class that drives the whole conversion process
+class Replicator::Imp
 {
 public:
-    Replicator& operator=(Replicator&) = delete;
-    Replicator(Replicator&) = delete;
+    Imp& operator=(Imp&) = delete;
+    Imp(Imp&) = delete;
 
     // Creates a new replication stream and starts it
-    static std::pair<std::string, std::unique_ptr<Replicator>> start(const Config& cnf);
+    static std::pair<std::string, std::unique_ptr<Replicator::Imp>> start(const Config& cnf);
 
     // Stops a running replication stream
     void stop();
@@ -54,37 +48,37 @@ public:
     // Get error message
     std::string error() const;
 
-    ~Replicator();
+    ~Imp();
 
 private:
-    Replicator(const Config& cnf);
+    Imp(const Config& cnf);
     bool connect();
     bool run();
     void process_events(std::promise<bool> promise);
     void set_error(const std::string& err);
 
-    Config             m_cnf;            // The configuration the stream was started with
-    MYSQL*             m_mysql {nullptr};// Database connection
-    MARIADB_RPL*       m_rpl {nullptr};  // Replication handle
-    std::thread        m_thr;            // Thread that receives the replication events
-    std::atomic<bool>  m_running {true}; // Whether the stream is running
-    std::string        m_error;          // The latest error message
-    std::string        m_gtid;           // GTID position to start from
+    Config             m_cnf;               // The configuration the stream was started with
+    MYSQL*             m_mysql {nullptr};   // Database connection
+    MARIADB_RPL*       m_rpl {nullptr};     // Replication handle
+    std::thread        m_thr;               // Thread that receives the replication events
+    std::atomic<bool>  m_running {true};    // Whether the stream is running
+    std::string        m_error;             // The latest error message
+    std::string        m_gtid;              // GTID position to start from
     mutable std::mutex m_lock;
 
     // Map of active tables
     std::unordered_map<uint64_t, std::unique_ptr<Table>> m_tables;
 };
 
-Replicator::Replicator(const Config& cnf)
+Replicator::Imp::Imp(const Config& cnf)
     : m_cnf(cnf)
 {
 }
 
 // static
-std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Config& config)
+std::pair<std::string, std::unique_ptr<Replicator::Imp>> Replicator::Imp::start(const Config& config)
 {
-    std::unique_ptr<Replicator> rval(new(std::nothrow) Replicator(config));
+    std::unique_ptr<Imp> rval(new(std::nothrow) Imp(config));
     std::string err;
 
     if (!rval)
@@ -100,7 +94,7 @@ std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Conf
     return {err, std::move(rval)};
 }
 
-void Replicator::stop()
+void Replicator::Imp::stop()
 {
     if (m_running)
     {
@@ -109,31 +103,31 @@ void Replicator::stop()
     }
 }
 
-std::string Replicator::error() const
+std::string Replicator::Imp::error() const
 {
     std::lock_guard<std::mutex> guard(m_lock);
     return m_error;
 }
 
-void Replicator::set_error(const std::string& err)
+void Replicator::Imp::set_error(const std::string& err)
 {
     std::lock_guard<std::mutex> guard(m_lock);
     m_error = err;
 }
 
-bool Replicator::run()
+bool Replicator::Imp::run()
 {
     std::promise<bool> promise;
     auto future = promise.get_future();
 
-    //Start the thread and wait for the result
-    m_thr = std::thread(&Replicator::process_events, this, std::move(promise));
+    // Start the thread and wait for the result
+    m_thr = std::thread(&Imp::process_events, this, std::move(promise));
     future.wait();
 
     return future.get();
 }
 
-bool Replicator::connect()
+bool Replicator::Imp::connect()
 {
     std::string gtid_start_pos = "SET @slave_connect_state='" + m_gtid + "'";
 
@@ -188,7 +182,7 @@ bool Replicator::connect()
     return true;
 }
 
-void Replicator::process_events(std::promise<bool> promise)
+void Replicator::Imp::process_events(std::promise<bool> promise)
 {
     bool ok = connect();
     promise.set_value(ok);
@@ -221,7 +215,7 @@ void Replicator::process_events(std::promise<bool> promise)
     }
 }
 
-Replicator::~Replicator()
+Replicator::Imp::~Imp()
 {
     if (m_running)
     {
@@ -232,8 +226,6 @@ Replicator::~Replicator()
     mysql_close(m_mysql);
 }
 
-}
-
 //
 // The public API
 //
@@ -242,9 +234,9 @@ Replicator::~Replicator()
 std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Config& cnf)
 {
     std::unique_ptr<Replicator> rval;
-    std::unique_ptr<real::Replicator> real;
+    std::unique_ptr<Imp> real;
     std::string error;
-    std::tie(error, real) = real::Replicator::start(cnf);
+    std::tie(error, real) = Replicator::Imp::start(cnf);
 
     if (real)
     {
@@ -256,21 +248,20 @@ std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Conf
 
 void Replicator::stop()
 {
-    m_real->stop();
+    m_imp->stop();
 }
 
 std::string Replicator::error() const
 {
-    return m_real->error();
+    return m_imp->error();
 }
 
 Replicator::~Replicator()
 {
 }
 
-Replicator::Replicator(std::unique_ptr<real::Replicator> real)
-    : m_real(std::move(real))
+Replicator::Replicator(std::unique_ptr<Imp> real)
+    : m_imp(std::move(real))
 {
 }
-
 }

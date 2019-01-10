@@ -21,12 +21,6 @@
 namespace cdc
 {
 
-namespace real
-{
-// Private namespace for implementation details
-class Replicator;
-}
-
 // Final name pending
 class Replicator
 {
@@ -57,9 +51,10 @@ public:
     ~Replicator();
 
 private:
-    Replicator(std::unique_ptr<real::Replicator> real);
+    class Imp;
+    Replicator(std::unique_ptr<Replicator::Imp> real);
 
     // Pointer to the implementation of the abstract interface
-    std::unique_ptr<real::Replicator> m_real;
+    std::unique_ptr<Replicator::Imp> m_imp;
 };
 }
