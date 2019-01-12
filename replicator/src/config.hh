@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -36,9 +37,10 @@ struct Config
     // ColumnStore configuration
     struct
     {
-        std::string user;       // Username used for the SQL connection
-        std::string password;   // Password for the user
-        std::string xml;        // Path to Columnstore.xml
+        std::string               user;             // Username used for the SQL connection
+        std::string               password;         // Password for the user
+        std::string               xml;              // Path to Columnstore.xml
+        std::chrono::milliseconds flush_interval;   // How often to flush per-table data to ColumnStore
     } cs;
 };
 }

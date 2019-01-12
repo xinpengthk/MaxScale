@@ -18,6 +18,8 @@ Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     , m_table(m_tm->event.table_map.table.str, m_tm->event.table_map.table.length)
     , m_database(m_tm->event.table_map.database.str, m_tm->event.table_map.database.length)
     , m_driver(new mcsapi::ColumnStoreDriver(cnf.cs.xml))
+    , m_flush_interval(cnf.cs.flush_interval)
+    , m_thr(&Table::run, this)
 {
 }
 
@@ -25,6 +27,19 @@ Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
 std::unique_ptr<Table> Table::open(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
 {
     return std::unique_ptr<Table>(new Table(cnf, table_map));
+}
+
+void Table::run()
+{
+    while (m_running)
+    {
+        // Process all pending events
+        process();
+
+        // Wait until a notification arrives or a timeout is reached
+        std::unique_lock<std::mutex> guard(m_process_lock);
+        m_cv.wait_for(guard, m_flush_interval);
+    }
 }
 
 void Table::enqueue(MARIADB_RPL_EVENT* rows)
@@ -159,5 +174,11 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 
 Table::~Table()
 {
+    std::unique_lock<std::mutex> guard(m_process_lock);
+    m_running = false;
+    m_cv.notify_one();
+    guard.unlock();
+
+    m_thr.join();
     mariadb_free_rpl_event(m_tm);
 }

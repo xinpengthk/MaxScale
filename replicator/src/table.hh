@@ -13,9 +13,12 @@
 
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <thread>
 
 #include <mysql.h>
 #include <mariadb_rpl.h>
@@ -67,6 +70,11 @@ private:
     using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
 
     Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
+
+    // The "main" function where the processing thread runs
+    void run();
+
+    // Processes all available rows and adds them to the bulk load
     bool process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
 
     MARIADB_RPL_EVENT*              m_tm;           // The table map event, used in the conversion process
@@ -76,4 +84,8 @@ private:
     std::vector<MARIADB_RPL_EVENT*> m_queue;        // List of events queued for this table
     std::mutex                      m_queue_lock;   // Protects use of m_queue
     std::mutex                      m_process_lock; // Prevents concurrent calls to Table::process
+    std::atomic<bool>               m_running {true};
+    std::condition_variable         m_cv;
+    std::chrono::milliseconds       m_flush_interval;
+    std::thread                     m_thr;
 };
