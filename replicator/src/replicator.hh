@@ -29,12 +29,11 @@ public:
     /**
      * Create a new data replicator
      *
-     * @param cnf Path to the INI format configuration file
+     * @param cnf The configuration to use
      *
-     * @return On success, an empty string is returned and the new Replicator instance is stored in
-     *         the unique_ptr. If an error occurred, the string contains the error description.
+     * @return The new Replicator instance
      */
-    static std::pair<std::string, std::unique_ptr<Replicator>> start(const Config& cnf);
+    static std::unique_ptr<Replicator> start(const Config& cnf);
 
     /**
      * Stops a running replication stream
@@ -52,7 +51,7 @@ public:
 
 private:
     class Imp;
-    Replicator(std::unique_ptr<Replicator::Imp> real);
+    Replicator(const Config& cnf);
 
     // Pointer to the implementation of the abstract interface
     std::unique_ptr<Replicator::Imp> m_imp;

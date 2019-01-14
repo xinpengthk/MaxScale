@@ -41,7 +41,7 @@ public:
     Imp(Imp&) = delete;
 
     // Creates a new replication stream and starts it
-    static std::pair<std::string, std::unique_ptr<Replicator::Imp>> start(const Config& cnf);
+    Imp(const Config& cnf);
 
     // Stops a running replication stream
     void stop();
@@ -52,10 +52,9 @@ public:
     ~Imp();
 
 private:
-    Imp(const Config& cnf);
     bool connect();
-    bool run();
-    void process_events(std::promise<bool> promise);
+    void process_events();
+    void process_one_event(MARIADB_RPL_EVENT* event);
     void set_error(const std::string& err);
 
     Config               m_cnf;                 // The configuration the stream was started with
@@ -72,26 +71,8 @@ private:
 
 Replicator::Imp::Imp(const Config& cnf)
     : m_cnf(cnf)
+    , m_thr(std::thread(&Imp::process_events, this))
 {
-}
-
-// static
-std::pair<std::string, std::unique_ptr<Replicator::Imp>> Replicator::Imp::start(const Config& config)
-{
-    std::unique_ptr<Imp> rval(new(std::nothrow) Imp(config));
-    std::string err;
-
-    if (!rval)
-    {
-        err = "Memory allocation failed";
-    }
-    else if (!rval->run())
-    {
-        err = rval->error();
-        rval.reset();
-    }
-
-    return {err, std::move(rval)};
 }
 
 void Replicator::Imp::stop()
@@ -115,20 +96,15 @@ void Replicator::Imp::set_error(const std::string& err)
     m_error = err;
 }
 
-bool Replicator::Imp::run()
-{
-    std::promise<bool> promise;
-    auto future = promise.get_future();
-
-    // Start the thread and wait for the result
-    m_thr = std::thread(&Imp::process_events, this, std::move(promise));
-    future.wait();
-
-    return future.get();
-}
-
 bool Replicator::Imp::connect()
 {
+    if (m_sql)
+    {
+        // We already have a connection
+        return true;
+    }
+
+    bool rval = false;
     std::string gtid_start_pos = "SET @slave_connect_state='" + m_gtid + "'";
     std::string err;
 
@@ -137,66 +113,84 @@ bool Replicator::Imp::connect()
     if (!err.empty())
     {
         set_error(err);
-        return false;
     }
-
-    // Queries required to start GTID replication
-    std::vector<std::string> queries =
+    else
     {
-        "SET @master_binlog_checksum = @@global.binlog_checksum",
-        "SET @mariadb_slave_capability=4",
-        gtid_start_pos,
-        "SET @slave_gtid_strict_mode=1",
-        "SET @slave_gtid_ignore_duplicates=1",
-        "SET NAMES latin1"
-    };
-
-    if (!m_sql->query(queries))
-    {
-        set_error("Failed to prepare connection: " + m_sql->error());
-        return false;
-    }
-
-    if (!m_sql->replicate(m_cnf.mariadb.server_id))
-    {
-        set_error("Failed to open replication channel: " + m_sql->error());
-        return false;
-    }
-
-    return true;
-}
-
-void Replicator::Imp::process_events(std::promise<bool> promise)
-{
-    bool ok = connect();
-    promise.set_value(ok);
-
-    if (ok)
-    {
-        MARIADB_RPL_EVENT* event;
-
-        while (m_running && (event = mariadb_rpl_fetch(m_rpl, nullptr)))
+        // Queries required to start GTID replication
+        std::vector<std::string> queries =
         {
-            /**
-             * TODO: Implement event processing
-             *
-             * Pseudo-code implementation:
-             *
-             *  if (event == TABLE_MAP_EVENT)
-             *    m_tables[event.table_map.table_id] = Table::open(event);
-             *  else if (event == ROW_EVENT)
-             *    m_tables[event.rows.table_id].enqueue(event)
-             *  else if (event == QUERY_EVENT)
-             *  {
-             *    for (auto& a : m_tables) // Sync tables
-             *      a.process()
-             *    execute_query(event.sql)
-             *  }
-             */
+            "SET @master_binlog_checksum = @@global.binlog_checksum",
+            "SET @mariadb_slave_capability=4",
+            gtid_start_pos,
+            "SET @slave_gtid_strict_mode=1",
+            "SET @slave_gtid_ignore_duplicates=1",
+            "SET NAMES latin1"
+        };
 
-            mariadb_free_rpl_event(event);
+        if (!m_sql->query(queries))
+        {
+            set_error("Failed to prepare connection: " + m_sql->error());
+        }
+        else if (!m_sql->replicate(m_cnf.mariadb.server_id))
+        {
+            set_error("Failed to open replication channel: " + m_sql->error());
+        }
+        else
+        {
+            rval = true;
         }
     }
+
+    if (!rval)
+    {
+        m_sql.reset();
+    }
+
+    return rval;
+}
+
+void Replicator::Imp::process_events()
+{
+    while (m_running)
+    {
+        if (!connect())
+        {
+            // We failed to connect to any of the servers, try again in a few seconds
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            continue;
+        }
+
+        if (MARIADB_RPL_EVENT* event = m_sql->fetch_event())
+        {
+            process_one_event(event);
+        }
+        else
+        {
+            // Something went wrong, close the connection and connect again at the start of the next loop
+            m_sql.reset();
+        }
+    }
+}
+
+void Replicator::Imp::process_one_event(MARIADB_RPL_EVENT* event)
+{
+    /**
+     * TODO: Implement event processing
+     *
+     * Pseudo-code implementation:
+     *
+     *  if (event == TABLE_MAP_EVENT)
+     *    m_tables[event.table_map.table_id] = Table::open(event);
+     *  else if (event == ROW_EVENT)
+     *    m_tables[event.rows.table_id].enqueue(event)
+     *  else if (event == QUERY_EVENT)
+     *  {
+     *    for (auto& a : m_tables) // Sync tables
+     *      a.process()
+     *    execute_query(event.sql)
+     *  }
+     */
+    mariadb_free_rpl_event(event);
 }
 
 Replicator::Imp::~Imp()
@@ -212,19 +206,9 @@ Replicator::Imp::~Imp()
 //
 
 // static
-std::pair<std::string, std::unique_ptr<Replicator>> Replicator::start(const Config& cnf)
+std::unique_ptr<Replicator> Replicator::start(const Config& cnf)
 {
-    std::unique_ptr<Replicator> rval;
-    std::unique_ptr<Imp> real;
-    std::string error;
-    std::tie(error, real) = Replicator::Imp::start(cnf);
-
-    if (real)
-    {
-        rval.reset((new(std::nothrow) Replicator(std::move(real))));
-    }
-
-    return {error, std::move(rval)};
+    return std::unique_ptr<Replicator>(new Replicator(cnf));
 }
 
 void Replicator::stop()
@@ -241,8 +225,8 @@ Replicator::~Replicator()
 {
 }
 
-Replicator::Replicator(std::unique_ptr<Imp> real)
-    : m_imp(std::move(real))
+Replicator::Replicator(const Config& cnf)
+    : m_imp(new Imp(cnf))
 {
 }
 }
