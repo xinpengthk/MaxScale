@@ -27,6 +27,7 @@
 
 // Private headers
 #include "table.hh"
+#include "sql.hh"
 
 namespace cdc
 {
@@ -57,14 +58,14 @@ private:
     void process_events(std::promise<bool> promise);
     void set_error(const std::string& err);
 
-    Config             m_cnf;               // The configuration the stream was started with
-    MYSQL*             m_mysql {nullptr};   // Database connection
-    MARIADB_RPL*       m_rpl {nullptr};     // Replication handle
-    std::thread        m_thr;               // Thread that receives the replication events
-    std::atomic<bool>  m_running {true};    // Whether the stream is running
-    std::string        m_error;             // The latest error message
-    std::string        m_gtid;              // GTID position to start from
-    mutable std::mutex m_lock;
+    Config               m_cnf;                 // The configuration the stream was started with
+    std::unique_ptr<SQL> m_sql;                 // Database connection
+    MARIADB_RPL*         m_rpl {nullptr};       // Replication handle
+    std::thread          m_thr;                 // Thread that receives the replication events
+    std::atomic<bool>    m_running {true};      // Whether the stream is running
+    std::string          m_error;               // The latest error message
+    std::string          m_gtid;                // GTID position to start from
+    mutable std::mutex   m_lock;
 
     // Map of active tables
     std::unordered_map<uint64_t, std::unique_ptr<Table>> m_tables;
@@ -130,17 +131,13 @@ bool Replicator::Imp::run()
 bool Replicator::Imp::connect()
 {
     std::string gtid_start_pos = "SET @slave_connect_state='" + m_gtid + "'";
+    std::string err;
 
-    if (!(m_mysql = mysql_init(nullptr)))
-    {
-        set_error("Connection initialization failed");
-        return false;
-    }
+    std::tie(err, m_sql) = SQL::connect(m_cnf.mariadb.servers);
 
-    if (!mysql_real_connect(m_mysql, m_cnf.mariadb.host.c_str(), m_cnf.mariadb.user.c_str(),
-                            m_cnf.mariadb.password.c_str(), nullptr, m_cnf.mariadb.port, nullptr, 0))
+    if (!err.empty())
     {
-        set_error("Connection creation failed: " + std::string(mysql_error(m_mysql)));
+        set_error(err);
         return false;
     }
 
@@ -155,17 +152,13 @@ bool Replicator::Imp::connect()
         "SET NAMES latin1"
     };
 
-
-    for (auto a : queries)
+    if (!m_sql->query(queries))
     {
-        if (mysql_query(m_mysql, a.c_str()))
-        {
-            set_error("Failed to prepare connection: " + std::string(mysql_error(m_mysql)));
-            return false;
-        }
+        set_error("Failed to prepare connection: " + m_sql->error());
+        return false;
     }
 
-    if (!(m_rpl = mariadb_rpl_init(m_mysql)))
+    if (!(m_rpl = mariadb_rpl_init(*m_sql)))
     {
         set_error("Failed to initialize replication context");
         return false;
@@ -223,7 +216,6 @@ Replicator::Imp::~Imp()
     }
 
     mariadb_rpl_close(m_rpl);
-    mysql_close(m_mysql);
 }
 
 //

@@ -20,15 +20,20 @@
 namespace cdc
 {
 
+struct Server
+{
+    std::string host;       // Address to connect to
+    int         port;       // Port where the server is listening
+    std::string user;       // Username used for the connection
+    std::string password;   // Password for the user
+};
+
 struct Config
 {
     // Replication configuration
     struct
     {
-        std::string              host;      // Address to connect to
-        int                      port;      // Port where the master is listening
-        std::string              user;      // Username used for the connection
-        std::string              password;  // Password for the user
+        std::vector<Server>      servers;   // List of master servers to replicate from
         int                      server_id; // Server ID used in registration
         std::string              gtid;      // Starting GTID
         std::vector<std::string> tables;    // Table identifiers that are processed
@@ -37,8 +42,7 @@ struct Config
     // ColumnStore configuration
     struct
     {
-        std::string               user;             // Username used for the SQL connection
-        std::string               password;         // Password for the user
+        std::vector<Server>       server;           // List of UMs
         std::string               xml;              // Path to Columnstore.xml
         std::chrono::milliseconds flush_interval;   // How often to flush per-table data to ColumnStore
     } cs;
