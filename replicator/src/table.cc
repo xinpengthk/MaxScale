@@ -14,9 +14,19 @@
 #include "table.hh"
 
 Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
-    : m_tm(table_map)
-    , m_table(m_tm->event.table_map.table.str, m_tm->event.table_map.table.length)
-    , m_database(m_tm->event.table_map.database.str, m_tm->event.table_map.database.length)
+    : m_metadata(table_map->event.table_map.metadata.str,
+                 table_map->event.table_map.metadata.str +
+                 table_map->event.table_map.metadata.length)
+    , m_column_types(table_map->event.table_map.column_types,
+                     table_map->event.table_map.column_types +
+                     table_map->event.table_map.column_count)
+// Waiting on https://github.com/MariaDB/mariadb-connector-c/pull/93
+//    , m_column_types(table_map->event.table_map.column_types.str,
+//                     table_map->event.table_map.column_types.length)
+    , m_table(table_map->event.table_map.table.str,
+              table_map->event.table_map.table.length)
+    , m_database(table_map->event.table_map.database.str,
+                 table_map->event.table_map.database.length)
     , m_driver(new mcsapi::ColumnStoreDriver(cnf.cs.xml))
     , m_flush_interval(cnf.cs.flush_interval)
     , m_thr(&Table::run, this)
@@ -128,7 +138,7 @@ int metadata_length(uint8_t type)
 
 bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 {
-    uint8_t* metadata = (uint8_t*)m_tm->event.table_map.metadata.str;
+    uint8_t* metadata = m_metadata.data();
     uint8_t* column_present = (uint8_t*)rows->event.rows.column_bitmap;
     uint8_t* row = (uint8_t*)rows->event.rows.row_data;
     uint8_t* null_ptr = row;
@@ -164,7 +174,7 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 
         // Use this version when https://github.com/MariaDB/mariadb-connector-c/pull/93 is merged
         // metadata += metadata_length(m_tm->event.table_map.column_types.str[i]);
-        metadata += metadata_length(m_tm->event.table_map.column_types[i]);
+        metadata += metadata_length(m_column_types[i]);
     }
 
     bulk->writeRow();
@@ -180,5 +190,4 @@ Table::~Table()
     guard.unlock();
 
     m_thr.join();
-    mariadb_free_rpl_event(m_tm);
 }

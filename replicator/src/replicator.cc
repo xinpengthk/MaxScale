@@ -196,8 +196,8 @@ void Replicator::Imp::process_one_event(MARIADB_RPL_EVENT* event)
             break;
 
         case TABLE_MAP_EVENT:
-            // Table takes ownership of the event
             m_tables[event->event.table_map.table_id] = Table::open(m_cnf, event);
+            mariadb_free_rpl_event(event);
             break;
 
         case QUERY_EVENT:

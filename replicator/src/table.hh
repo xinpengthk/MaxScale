@@ -77,7 +77,8 @@ private:
     // Processes all available rows and adds them to the bulk load
     bool process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
 
-    MARIADB_RPL_EVENT*              m_tm;           // The table map event, used in the conversion process
+    std::vector<uint8_t>            m_metadata;     // Table metadata
+    std::vector<uint8_t>            m_column_types; // Column types in the table
     std::string                     m_table;        // Table name
     std::string                     m_database;     // Database name where the table is located
     Driver                          m_driver;       // The ColumnStore API handle
