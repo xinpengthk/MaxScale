@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cstdint>
 #include <future>
+#include <sstream>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
@@ -63,6 +64,7 @@ private:
     std::atomic<bool>    m_running {true};      // Whether the stream is running
     std::string          m_error;               // The latest error message
     std::string          m_gtid;                // GTID position to start from
+    std::string          m_current_gtid;        // GTID of the transaction being processed
     mutable std::mutex   m_lock;
 
     // Map of active tables
@@ -172,25 +174,57 @@ void Replicator::Imp::process_events()
     }
 }
 
+std::string to_gtid_string(const MARIADB_RPL_EVENT& event)
+{
+    std::stringstream ss;
+    ss << event.event.gtid.domain_id << '-' << event.server_id << '-' << event.event.gtid.sequence_nr;
+    return ss.str();
+}
+
 void Replicator::Imp::process_one_event(MARIADB_RPL_EVENT* event)
 {
-    /**
-     * TODO: Implement event processing
-     *
-     * Pseudo-code implementation:
-     *
-     *  if (event == TABLE_MAP_EVENT)
-     *    m_tables[event.table_map.table_id] = Table::open(event);
-     *  else if (event == ROW_EVENT)
-     *    m_tables[event.rows.table_id].enqueue(event)
-     *  else if (event == QUERY_EVENT)
-     *  {
-     *    for (auto& a : m_tables) // Sync tables
-     *      a.process()
-     *    execute_query(event.sql)
-     *  }
-     */
-    mariadb_free_rpl_event(event);
+    switch (event->event_type)
+    {
+        case GTID_EVENT:
+            m_current_gtid = to_gtid_string(*event);
+            mariadb_free_rpl_event(event);
+            break;
+
+        case XID_EVENT:
+            m_gtid = m_current_gtid;
+            mariadb_free_rpl_event(event);
+            break;
+
+        case TABLE_MAP_EVENT:
+            // Table takes ownership of the event
+            m_tables[event->event.table_map.table_id] = Table::open(m_cnf, event);
+            break;
+
+        case QUERY_EVENT:
+            for (auto& t : m_tables)
+            {
+                t.second->process();
+            }
+
+            // TODO: Execute the query
+            mariadb_free_rpl_event(event);
+            break;
+
+        case WRITE_ROWS_EVENT_V1:
+            m_tables[event->event.rows.table_id]->enqueue(event);
+            break;
+
+        case UPDATE_ROWS_EVENT_V1:
+        case DELETE_ROWS_EVENT_V1:
+            // TODO: Convert to SQL and execute it
+            mariadb_free_rpl_event(event);
+            break;
+
+        default:
+            // Ignore the event
+            mariadb_free_rpl_event(event);
+            break;
+    }
 }
 
 Replicator::Imp::~Imp()
