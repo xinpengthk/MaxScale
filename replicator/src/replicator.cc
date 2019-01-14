@@ -60,7 +60,6 @@ private:
 
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
-    MARIADB_RPL*         m_rpl {nullptr};       // Replication handle
     std::thread          m_thr;                 // Thread that receives the replication events
     std::atomic<bool>    m_running {true};      // Whether the stream is running
     std::string          m_error;               // The latest error message
@@ -158,17 +157,9 @@ bool Replicator::Imp::connect()
         return false;
     }
 
-    if (!(m_rpl = mariadb_rpl_init(*m_sql)))
+    if (!m_sql->replicate(m_cnf.mariadb.server_id))
     {
-        set_error("Failed to initialize replication context");
-        return false;
-    }
-
-    mariadb_rpl_optionsv(m_rpl, MARIADB_RPL_SERVER_ID, &m_cnf.mariadb.server_id);
-
-    if (mariadb_rpl_open(m_rpl))
-    {
-        set_error("Failed to open replication channel");
+        set_error("Failed to open replication channel: " + m_sql->error());
         return false;
     }
 
@@ -214,8 +205,6 @@ Replicator::Imp::~Imp()
     {
         stop();
     }
-
-    mariadb_rpl_close(m_rpl);
 }
 
 //

@@ -20,6 +20,7 @@ SQL::SQL(MYSQL* mysql)
 
 SQL::~SQL()
 {
+    mariadb_rpl_close(m_rpl);
     mysql_close(m_mysql);
 }
 
@@ -106,4 +107,26 @@ std::string SQL::error() const
 int SQL::errnum() const
 {
     return mysql_errno(m_mysql);
+}
+
+bool SQL::replicate(int server_id)
+{
+    if (!(m_rpl = mariadb_rpl_init(m_mysql)))
+    {
+        return false;
+    }
+
+    mariadb_rpl_optionsv(m_rpl, MARIADB_RPL_SERVER_ID, &server_id);
+
+    if (mariadb_rpl_open(m_rpl))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+MARIADB_RPL_EVENT* SQL::fetch_event()
+{
+    return mariadb_rpl_fetch(m_rpl, nullptr);
 }

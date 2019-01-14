@@ -63,7 +63,25 @@ public:
      */
     int errnum() const;
 
+    /**
+     * Start replicating data from the server
+     *
+     * @param server_id Server ID to connect with
+     *
+     * @return True if replication was started successfully
+     */
+    bool replicate(int server_id);
+
+    /**
+     * Fetch one replication event
+     *
+     * @return The next replicated event or null on error
+     */
+    MARIADB_RPL_EVENT* fetch_event();
+
 private:
     SQL(MYSQL* mysql);
-    MYSQL* m_mysql;
+
+    MYSQL*       m_mysql {nullptr};     // Database handle
+    MARIADB_RPL* m_rpl {nullptr};       // Replication handle
 };
