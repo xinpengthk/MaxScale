@@ -91,7 +91,8 @@ MXS_BEGIN_DECLS
 #define LOG_EVENT_THREAD_SPECIFIC_F          0x0004
 #define LOG_EVENT_SUPPRESS_USE_F             0x0008
 #define LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F 0x0010
-#define LOG_EVENT_ARTIFICIAL_F               0x0020
+// Conflicts with connector-c definitions
+//#define LOG_EVENT_ARTIFICIAL_F               0x0020
 #define LOG_EVENT_RELAY_LOG_F                0x0040
 #define LOG_EVENT_IGNORABLE_F                0x0080
 #define LOG_EVENT_NO_FILTER_F                0x0100

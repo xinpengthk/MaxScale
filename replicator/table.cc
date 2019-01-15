@@ -147,7 +147,7 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
     // Jump over the null bitmap
     row += (rows->event.rows.column_count + 7) / 8;
 
-    for (int i = 0; i < rows->event.rows.column_count; i++)
+    for (uint32_t i = 0; i < rows->event.rows.column_count; i++)
     {
         if (*column_present & offset)
         {
