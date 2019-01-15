@@ -15,11 +15,11 @@
 
 Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     : m_metadata(table_map->event.table_map.metadata.str,
-                 table_map->event.table_map.metadata.str +
-                 table_map->event.table_map.metadata.length)
+                 table_map->event.table_map.metadata.str
+                 + table_map->event.table_map.metadata.length)
     , m_column_types(table_map->event.table_map.column_types,
-                     table_map->event.table_map.column_types +
-                     table_map->event.table_map.column_count)
+                     table_map->event.table_map.column_types
+                     + table_map->event.table_map.column_count)
 // Waiting on https://github.com/MariaDB/mariadb-connector-c/pull/93
 //    , m_column_types(table_map->event.table_map.column_types.str,
 //                     table_map->event.table_map.column_types.length)

@@ -57,6 +57,7 @@ private:
     void process_events();
     void process_one_event(MARIADB_RPL_EVENT* event);
     void set_error(const std::string& err);
+    void flush_tables();
 
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
@@ -181,49 +182,54 @@ std::string to_gtid_string(const MARIADB_RPL_EVENT& event)
     return ss.str();
 }
 
+void Replicator::Imp::flush_tables()
+{
+    for (auto& t : m_tables)
+    {
+        t.second->process();
+    }
+}
+
 void Replicator::Imp::process_one_event(MARIADB_RPL_EVENT* event)
 {
     switch (event->event_type)
     {
-        case GTID_EVENT:
-            m_current_gtid = to_gtid_string(*event);
-            mariadb_free_rpl_event(event);
-            break;
+    case GTID_EVENT:
+        m_current_gtid = to_gtid_string(*event);
+        mariadb_free_rpl_event(event);
+        break;
 
-        case XID_EVENT:
-            m_gtid = m_current_gtid;
-            mariadb_free_rpl_event(event);
-            break;
+    case XID_EVENT:
+        m_gtid = m_current_gtid;
+        mariadb_free_rpl_event(event);
+        break;
 
-        case TABLE_MAP_EVENT:
-            m_tables[event->event.table_map.table_id] = Table::open(m_cnf, event);
-            mariadb_free_rpl_event(event);
-            break;
+    case TABLE_MAP_EVENT:
+        m_tables[event->event.table_map.table_id] = Table::open(m_cnf, event);
+        mariadb_free_rpl_event(event);
+        break;
 
-        case QUERY_EVENT:
-            for (auto& t : m_tables)
-            {
-                t.second->process();
-            }
+    case QUERY_EVENT:
+        flush_tables();
+        // TODO: Execute the query
+        mariadb_free_rpl_event(event);
+        break;
 
-            // TODO: Execute the query
-            mariadb_free_rpl_event(event);
-            break;
+    case WRITE_ROWS_EVENT_V1:
+        m_tables[event->event.rows.table_id]->enqueue(event);
+        break;
 
-        case WRITE_ROWS_EVENT_V1:
-            m_tables[event->event.rows.table_id]->enqueue(event);
-            break;
+    case UPDATE_ROWS_EVENT_V1:
+    case DELETE_ROWS_EVENT_V1:
+        flush_tables();
+        // TODO: Convert to SQL and execute it
+        mariadb_free_rpl_event(event);
+        break;
 
-        case UPDATE_ROWS_EVENT_V1:
-        case DELETE_ROWS_EVENT_V1:
-            // TODO: Convert to SQL and execute it
-            mariadb_free_rpl_event(event);
-            break;
-
-        default:
-            // Ignore the event
-            mariadb_free_rpl_event(event);
-            break;
+    default:
+        // Ignore the event
+        mariadb_free_rpl_event(event);
+        break;
     }
 }
 
