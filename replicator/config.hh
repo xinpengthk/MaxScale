@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace cdc
@@ -33,16 +34,16 @@ struct Config
     // Replication configuration
     struct
     {
-        std::vector<Server>      servers;   // List of master servers to replicate from
-        int                      server_id; // Server ID used in registration
-        std::string              gtid;      // Starting GTID
-        std::vector<std::string> tables;    // Table identifiers that are processed
+        std::vector<Server>             servers;    // List of master servers to replicate from
+        int                             server_id;  // Server ID used in registration
+        std::string                     gtid;       // Starting GTID
+        std::unordered_set<std::string> tables;     // Table identifiers that are processed
     } mariadb;
 
     // ColumnStore configuration
     struct
     {
-        std::vector<Server>       server;           // List of UMs
+        std::vector<Server>       servers;          // List of UMs
         std::string               xml;              // Path to Columnstore.xml
         std::chrono::milliseconds flush_interval;   // How often to flush per-table data to ColumnStore
     } cs;
