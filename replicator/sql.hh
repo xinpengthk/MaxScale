@@ -85,3 +85,9 @@ private:
     MYSQL*       m_mysql {nullptr};     // Database handle
     MARIADB_RPL* m_rpl {nullptr};       // Replication handle
 };
+
+// String conversion helper
+static inline std::string to_string(const MARIADB_STRING& str)
+{
+    return std::string(str.str, str.length);
+}

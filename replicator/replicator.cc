@@ -218,13 +218,8 @@ void Replicator::Imp::flush_tables()
 {
     for (auto& t : m_tables)
     {
-        t.second->process();
+        t.second->flush();
     }
-}
-
-std::string to_string(const MARIADB_STRING& str)
-{
-    return std::string(str.str, str.length);
 }
 
 bool Replicator::Imp::should_process(Event& event)

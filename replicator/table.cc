@@ -28,8 +28,6 @@ Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     , m_database(table_map->event.table_map.database.str,
                  table_map->event.table_map.database.length)
     , m_driver(new mcsapi::ColumnStoreDriver(cnf.cs.xml))
-    , m_flush_interval(cnf.cs.flush_interval)
-    , m_thr(&Table::run, this)
 {
 }
 
@@ -39,67 +37,31 @@ std::unique_ptr<Table> Table::open(const cdc::Config& cnf, MARIADB_RPL_EVENT* ta
     return std::unique_ptr<Table>(new Table(cnf, table_map));
 }
 
-void Table::run()
+bool Table::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 {
-    while (m_running)
-    {
-        // Process all pending events
-        process();
-
-        // Wait until a notification arrives or a timeout is reached
-        std::unique_lock<std::mutex> guard(m_process_lock);
-        m_cv.wait_for(guard, m_flush_interval);
-    }
-}
-
-void Table::enqueue(MARIADB_RPL_EVENT* rows)
-{
-    std::lock_guard<std::mutex> guard(m_queue_lock);
-    m_queue.push_back(rows);
-}
-
-bool Table::process()
-{
-    // This allows "flushing" of all Tables by the main replication thread by
-    // iterating over all open tables and calling the process method. As new
-    // events are only added by the replication thread, no new events are
-    // added. This is required to synchronize the state of the tables before
-    // query events are processed (DDLs etc. would cause problems if done
-    // mid-insert).
-    std::lock_guard<std::mutex> process_guard(m_process_lock);
-
-    // Grab all available events
-    std::unique_lock<std::mutex> guard(m_queue_lock);
-    std::vector<MARIADB_RPL_EVENT*> queue;
-    m_queue.swap(queue);
-    guard.unlock();
-
     bool rval = true;
 
-    if (!queue.empty())
+    // Open a new bulk insert for this batch of rows
+    Bulk bulk(m_driver->createBulkInsert(m_database, m_table, 0, 0));
+
+    for (auto row : queue)
     {
-        // Open a new bulk insert for this batch of rows
-        Bulk bulk(m_driver->createBulkInsert(m_database, m_table, 0, 0));
+        if (!process_row(row, bulk))
+        {
+            rval = false;
+            break;
+        }
+    }
 
-        for (auto row : queue)
-        {
-            if (!process_row(row, bulk))
-            {
-                rval = false;
-                break;
-            }
-        }
-
-        if (rval)
-        {
-            // Successfully processed all rows, commit the batch
-            bulk->commit();
-        }
-        else
-        {
-            // Failed to process rows, roll back the transaction
-            bulk->rollback();
-        }
+    if (rval)
+    {
+        // Successfully processed all rows, commit the batch
+        bulk->commit();
+    }
+    else
+    {
+        // Failed to process rows, roll back the transaction
+        bulk->rollback();
     }
 
     return rval;
@@ -180,14 +142,4 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
     bulk->writeRow();
 
     return true;
-}
-
-Table::~Table()
-{
-    std::unique_lock<std::mutex> guard(m_process_lock);
-    m_running = false;
-    m_cv.notify_one();
-    guard.unlock();
-
-    m_thr.join();
 }
