@@ -31,6 +31,7 @@
 
 // Private headers
 #include "table.hh"
+#include "executor.hh"
 #include "sql.hh"
 
 
@@ -80,7 +81,6 @@ private:
 
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
-    std::thread          m_thr;                 // Thread that receives the replication events
     std::atomic<bool>    m_running {true};      // Whether the stream is running
     std::string          m_error;               // The latest error message
     std::string          m_gtid;                // GTID position to start from
@@ -89,10 +89,16 @@ private:
 
     // Map of active tables
     std::unordered_map<uint64_t, std::unique_ptr<Table>> m_tables;
+
+    // SQL executor that handles query events
+    SQLExecutor m_executor;
+
+    std::thread m_thr;                  // Thread that receives the replication events
 };
 
 Replicator::Imp::Imp(const Config& cnf)
     : m_cnf(cnf)
+    , m_executor(cnf.cs.servers)
     , m_thr(std::thread(&Imp::process_events, this))
 {
 }
@@ -286,7 +292,7 @@ void Replicator::Imp::process_one_event(Event& event)
 
     case QUERY_EVENT:
         flush_tables();
-        // TODO: Execute the query
+        m_executor.enqueue(event.release());
         break;
 
     case WRITE_ROWS_EVENT_V1:
