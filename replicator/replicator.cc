@@ -72,11 +72,17 @@ public:
     ~Imp();
 
 private:
+    enum class state
+    {
+        BULK,   // Processing one or more bulk inserts
+        STMT    // Processing SQL statements
+    };
+
     bool connect();
     void process_events();
     void process_one_event(Event& event);
     void set_error(const std::string& err);
-    void flush_tables();
+    void flush_tables(const Event& event);
     bool should_process(Event& event);
 
     Config               m_cnf;                 // The configuration the stream was started with
@@ -93,6 +99,7 @@ private:
     // SQL executor that handles query events
     SQLExecutor m_executor;
 
+    state       m_state {state::STMT};  // Current state
     std::thread m_thr;                  // Thread that receives the replication events
 };
 
@@ -220,11 +227,20 @@ std::string to_gtid_string(const MARIADB_RPL_EVENT& event)
     return ss.str();
 }
 
-void Replicator::Imp::flush_tables()
+void Replicator::Imp::flush_tables(const Event& event)
 {
-    for (auto& t : m_tables)
+    // Flush any pending events if transitioning from one state to another
+
+    if (m_state == state::STMT && event->event_type == WRITE_ROWS_EVENT_V1)
     {
-        t.second->flush();
+        m_executor.flush();
+    }
+    else if (m_state == state::BULK && event->event_type != WRITE_ROWS_EVENT_V1)
+    {
+        for (auto& t : m_tables)
+        {
+            t.second->flush();
+        }
     }
 }
 
@@ -276,6 +292,8 @@ bool Replicator::Imp::should_process(Event& event)
 
 void Replicator::Imp::process_one_event(Event& event)
 {
+    flush_tables(event);
+
     switch (event->event_type)
     {
     case GTID_EVENT:
@@ -291,7 +309,7 @@ void Replicator::Imp::process_one_event(Event& event)
         break;
 
     case QUERY_EVENT:
-        flush_tables();
+        m_state = state::STMT;
         m_executor.enqueue(event.release());
         break;
 
@@ -301,6 +319,7 @@ void Replicator::Imp::process_one_event(Event& event)
 
             if (t)
             {
+                m_state = state::BULK;
                 t->enqueue(event.release());
             }
         }
@@ -310,7 +329,7 @@ void Replicator::Imp::process_one_event(Event& event)
     case DELETE_ROWS_EVENT_V1:
         if (m_tables[event->event.rows.table_id])
         {
-            flush_tables();
+            m_state = state::STMT;
             // TODO: Convert to SQL and execute it
         }
         break;
