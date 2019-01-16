@@ -27,11 +27,11 @@
  * A class that handles processing of replicated events. The actual work is done by
  * subclasses that convert the events into other forms of data.
  */
-class Processor
+class REProc
 {
 public:
-    Processor(Processor&) = delete;
-    Processor& operator=(Processor&) = delete;
+    REProc(REProc&) = delete;
+    REProc& operator=(REProc&) = delete;
 
     /**
      * Queue an event for processing
@@ -56,7 +56,7 @@ public:
         process_queue();
     }
 
-    virtual ~Processor()
+    virtual ~REProc()
     {
         std::unique_lock<std::mutex> guard(m_process_lock);
         m_running = false;
@@ -67,8 +67,8 @@ public:
     }
 
 protected:
-    Processor()
-        : m_thr(&Processor::run, this)
+    REProc()
+        : m_thr(&REProc::run, this)
     {
     }
 

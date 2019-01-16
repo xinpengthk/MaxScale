@@ -22,7 +22,7 @@
  * The actual execution of the SQL is done on a separate thread and the SQL statements are only enqueued for
  * execution by the main controlling thread.
  */
-class SQLExecutor : public Processor
+class SQLExecutor : public REProc
 {
 public:
     SQLExecutor(const std::vector<cdc::Server>& servers);

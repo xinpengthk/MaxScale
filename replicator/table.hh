@@ -28,7 +28,7 @@
 /**
  * A class that converts replicated row events into ColumnStore bulk API writes.
  */
-class Table : public Processor
+class Table : public REProc
 {
 public:
     Table(Table&) = delete;
