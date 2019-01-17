@@ -33,6 +33,13 @@ public:
     REProc(REProc&) = delete;
     REProc& operator=(REProc&) = delete;
 
+    enum class State
+    {
+        IDLE,
+        TRX,
+        ERROR
+    };
+
     /**
      * Queue an event for processing
      *
@@ -48,12 +55,34 @@ public:
     }
 
     /**
-     * Synchronize with the Process thread and process any pending changes
+     * Synchronize with the Process thread and process any pending events
+     *
+     * @return True if all pending events were successfully processed and the open transaction committed or
+     *         if there were no pending events. False if an error occurred in which case no future
+     *         processing will take place which also causes all subsequent commits to fail.
      */
-    void flush()
+    bool commit()
     {
         std::lock_guard<std::mutex> guard(m_process_lock);
-        process_queue();
+
+        if (m_state != State::ERROR)
+        {
+            process_queue();
+
+            if (m_state == State::TRX)
+            {
+                if (commit_transaction())
+                {
+                    m_state = State::IDLE;
+                }
+                else
+                {
+                    m_state = State::ERROR;
+                }
+            }
+        }
+
+        return m_state == State::IDLE;
     }
 
     virtual ~REProc()
@@ -64,6 +93,20 @@ public:
         guard.unlock();
 
         m_thr.join();
+    }
+
+    // Get error message
+    std::string error() const
+    {
+        std::lock_guard<std::mutex> guard(m_process_lock);
+        return m_error;
+    }
+
+    // Get current state
+    State state() const
+    {
+        std::lock_guard<std::mutex> guard(m_process_lock);
+        return m_state;
     }
 
 protected:
@@ -82,8 +125,19 @@ protected:
      */
     virtual bool process(const std::vector<MARIADB_RPL_EVENT*>& queue) = 0;
 
+    virtual bool start_transaction() = 0;
+    virtual bool commit_transaction() = 0;
+    virtual void rollback_transaction() = 0;
+
+    // Set error message, DO NOT CALL unless m_process_lock is held
+    void set_error(const std::string& err)
+    {
+        m_error = err;
+    }
+
 private:
 
+    // Note: m_process_lock must be held by the caller of this function
     void process_queue()
     {
         // Grab all available events
@@ -94,8 +148,26 @@ private:
 
         if (!queue.empty())
         {
-            // Process all pending events
-            process(queue);
+            if (m_state == State::IDLE)
+            {
+                if (start_transaction())
+                {
+                    m_state = State::TRX;
+                }
+                else
+                {
+                    m_state = State::ERROR;
+                }
+            }
+
+            if (m_state == State::TRX)
+            {
+                // Process all pending events
+                if (!process(queue))
+                {
+                    m_state = State::ERROR;
+                }
+            }
         }
     }
 
@@ -115,8 +187,10 @@ private:
 
     std::vector<MARIADB_RPL_EVENT*> m_queue;        // List of events queued for this table
     std::mutex                      m_queue_lock;   // Protects use of m_queue
-    std::mutex                      m_process_lock; // Prevents concurrent calls to Processor::process
+    mutable std::mutex              m_process_lock; // Prevents critical sections of the processing code
     std::atomic<bool>               m_running {true};
     std::condition_variable         m_cv;
     std::thread                     m_thr;
+    std::string                     m_error;
+    State                           m_state {State::IDLE};
 };

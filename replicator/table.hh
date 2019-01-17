@@ -54,6 +54,10 @@ protected:
      */
     bool process(const std::vector<MARIADB_RPL_EVENT*>& queue) override;
 
+    bool start_transaction() override;
+    bool commit_transaction() override;
+    void rollback_transaction() override;
+
 private:
     using Driver = std::unique_ptr<mcsapi::ColumnStoreDriver>;
     using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
@@ -68,4 +72,5 @@ private:
     std::string          m_table;                   // Table name
     std::string          m_database;                // Database name where the table is located
     Driver               m_driver;                  // The ColumnStore API handle
+    Bulk                 m_bulk;
 };

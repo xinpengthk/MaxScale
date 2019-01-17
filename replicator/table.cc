@@ -37,31 +37,67 @@ std::unique_ptr<Table> Table::open(const cdc::Config& cnf, MARIADB_RPL_EVENT* ta
     return std::unique_ptr<Table>(new Table(cnf, table_map));
 }
 
+bool Table::start_transaction()
+{
+    bool rval = false;
+
+    try
+    {
+        m_bulk.reset(m_driver->createBulkInsert(m_database, m_table, 0, 0));
+        rval = true;
+    }
+    catch (const std::exception& ex)
+    {
+        set_error(ex.what());
+    }
+
+    return rval;
+}
+
+bool Table::commit_transaction()
+{
+    bool rval = false;
+
+    try
+    {
+        m_bulk->commit();
+        m_bulk.reset();
+        rval = true;
+    }
+    catch (const std::exception& ex)
+    {
+        set_error(ex.what());
+    }
+
+    return rval;
+}
+
+void Table::rollback_transaction()
+{
+    try
+    {
+        m_bulk->rollback();
+        m_bulk.reset();
+    }
+    catch (const std::exception& ex)
+    {
+        set_error(ex.what());
+    }
+}
+
 bool Table::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 {
     bool rval = true;
 
     // Open a new bulk insert for this batch of rows
-    Bulk bulk(m_driver->createBulkInsert(m_database, m_table, 0, 0));
 
     for (auto row : queue)
     {
-        if (!process_row(row, bulk))
+        if (!process_row(row, m_bulk))
         {
             rval = false;
             break;
         }
-    }
-
-    if (rval)
-    {
-        // Successfully processed all rows, commit the batch
-        bulk->commit();
-    }
-    else
-    {
-        // Failed to process rows, roll back the transaction
-        bulk->rollback();
     }
 
     return rval;

@@ -29,6 +29,9 @@ public:
 
 protected:
     bool process(const std::vector<MARIADB_RPL_EVENT*>& queue) override;
+    bool start_transaction() override;
+    bool commit_transaction() override;
+    void rollback_transaction() override;
 
 private:
     bool connect();

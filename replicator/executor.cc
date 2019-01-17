@@ -24,10 +24,19 @@ bool SQLExecutor::connect()
 
     if (!m_sql)
     {
-        m_sql = std::move(SQL::connect(m_servers).second);
+        auto res = SQL::connect(m_servers);
+        m_sql = std::move(res.second);
 
-        if (!m_sql || !m_sql->query("SET default_storage_engine=COLUMNSTORE"))
+        if (!m_sql)
         {
+            set_error(res.first);
+            rval = false;
+        }
+        else if (!m_sql->query("SET default_storage_engine=COLUMNSTORE")
+                 || !m_sql->query("SET autocommit=0"))
+        {
+            set_error(m_sql->error());
+            m_sql.reset();
             rval = false;
         }
     }
@@ -37,23 +46,45 @@ bool SQLExecutor::connect()
 
 bool SQLExecutor::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 {
-    bool rval = connect();
-
-    if (rval)
+    // Database connection was created in SQLExecutor::start_transaction
+    for (MARIADB_RPL_EVENT* event : queue)
     {
-        for (MARIADB_RPL_EVENT* event : queue)
-        {
-            // TODO: Filter out ENGINE=... parts and index definitions from CREATE and ALTER statements
+        // TODO: Filter out ENGINE=... parts and index definitions from CREATE and ALTER statements
 
-            // This is probably quite close to what the server actually does to execute query events
-            if (!m_sql->query("USE " + to_string(event->event.query.database))
-                || !m_sql->query(to_string(event->event.query.statement)))
-            {
-                m_sql.reset();
-                return false;
-            }
+        // This is probably quite close to what the server actually does to execute query events
+        if (!m_sql->query("USE " + to_string(event->event.query.database))
+            || !m_sql->query(to_string(event->event.query.statement)))
+        {
+            m_sql.reset();
+            return false;
         }
     }
 
     return true;
+}
+
+bool SQLExecutor::start_transaction()
+{
+    return connect();
+}
+
+bool SQLExecutor::commit_transaction()
+{
+    bool rval = m_sql->query("COMMIT");
+
+    if (!rval)
+    {
+        set_error(m_sql->error());
+    }
+
+    return rval;
+}
+
+
+void SQLExecutor::rollback_transaction()
+{
+    if (m_sql)
+    {
+        m_sql->query("ROLLBACK");
+    }
 }
