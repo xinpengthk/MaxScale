@@ -17,12 +17,9 @@ Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     : m_metadata(table_map->event.table_map.metadata.str,
                  table_map->event.table_map.metadata.str
                  + table_map->event.table_map.metadata.length)
-    , m_column_types(table_map->event.table_map.column_types,
-                     table_map->event.table_map.column_types
-                     + table_map->event.table_map.column_count)
-// Waiting on https://github.com/MariaDB/mariadb-connector-c/pull/93
-//    , m_column_types(table_map->event.table_map.column_types.str,
-//                     table_map->event.table_map.column_types.length)
+    , m_column_types(table_map->event.table_map.column_types.str,
+                     table_map->event.table_map.column_types.str
+                     + table_map->event.table_map.column_types.length)
     , m_table(table_map->event.table_map.table.str,
               table_map->event.table_map.table.length)
     , m_database(table_map->event.table_map.database.str,
@@ -170,8 +167,6 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
             ++column_present;
         }
 
-        // Use this version when https://github.com/MariaDB/mariadb-connector-c/pull/93 is merged
-        // metadata += metadata_length(m_tm->event.table_map.column_types.str[i]);
         metadata += metadata_length(m_column_types[i]);
     }
 

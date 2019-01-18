@@ -13,6 +13,7 @@
 #pragma once
 
 #include <mysql.h>
+#include <mariadb_rpl.h>
 
 #include <memory>
 
