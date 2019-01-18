@@ -41,11 +41,11 @@ public:
     void stop();
 
     /**
-     * Get the current error message
+     * Check if the replicator is OK
      *
-     * @return Current error message
+     * @return True if everything is OK. False if any errors have occurred and the replicator has stopped.
      */
-    std::string error() const;
+    bool ok() const;
 
     ~Replicator();
 

@@ -95,13 +95,6 @@ public:
         m_thr.join();
     }
 
-    // Get error message
-    std::string error() const
-    {
-        std::lock_guard<std::mutex> guard(m_process_lock);
-        return m_error;
-    }
-
     // Get current state
     State state() const
     {
@@ -128,12 +121,6 @@ protected:
     virtual bool start_transaction() = 0;
     virtual bool commit_transaction() = 0;
     virtual void rollback_transaction() = 0;
-
-    // Set error message, DO NOT CALL unless m_process_lock is held
-    void set_error(const std::string& err)
-    {
-        m_error = err;
-    }
 
 private:
 
@@ -191,6 +178,5 @@ private:
     std::atomic<bool>               m_running {true};
     std::condition_variable         m_cv;
     std::thread                     m_thr;
-    std::string                     m_error;
     State                           m_state {State::IDLE};
 };

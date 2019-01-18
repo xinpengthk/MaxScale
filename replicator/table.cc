@@ -11,7 +11,13 @@
  * Public License.
  */
 
+#define MXB_MODULE_NAME "BulkLoad"
+
 #include "table.hh"
+
+#include <maxscale/mysql_binlog.h>
+#include <maxbase/log.h>
+#include <maxbase/assert.h>
 
 Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     : m_metadata(table_map->event.table_map.metadata.str,
@@ -45,7 +51,7 @@ bool Table::start_transaction()
     }
     catch (const std::exception& ex)
     {
-        set_error(ex.what());
+        MXB_ERROR("%s", ex.what());
     }
 
     return rval;
@@ -63,7 +69,7 @@ bool Table::commit_transaction()
     }
     catch (const std::exception& ex)
     {
-        set_error(ex.what());
+        MXB_ERROR("%s", ex.what());
     }
 
     return rval;
@@ -78,7 +84,7 @@ void Table::rollback_transaction()
     }
     catch (const std::exception& ex)
     {
-        set_error(ex.what());
+        MXB_ERROR("%s", ex.what());
     }
 }
 

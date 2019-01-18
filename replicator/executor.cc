@@ -11,7 +11,11 @@
  * Public License.
  */
 
+#define MXB_MODULE_NAME "SQLExecutor"
+
 #include "executor.hh"
+
+#include <maxbase/log.h>
 
 SQLExecutor::SQLExecutor(const std::vector<cdc::Server>& servers)
     : m_servers(servers)
@@ -29,13 +33,13 @@ bool SQLExecutor::connect()
 
         if (!m_sql)
         {
-            set_error(res.first);
+            MXB_ERROR("%s", res.first.c_str());
             rval = false;
         }
         else if (!m_sql->query("SET default_storage_engine=COLUMNSTORE")
                  || !m_sql->query("SET autocommit=0"))
         {
-            set_error(m_sql->error());
+            MXB_ERROR("%s", m_sql->error().c_str());
             m_sql.reset();
             rval = false;
         }
@@ -51,10 +55,13 @@ bool SQLExecutor::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
     {
         // TODO: Filter out ENGINE=... parts and index definitions from CREATE and ALTER statements
 
+        auto db = to_string(event->event.query.database);
+        auto stmt = to_string(event->event.query.statement);
+
         // This is probably quite close to what the server actually does to execute query events
-        if (!m_sql->query("USE " + to_string(event->event.query.database))
-            || !m_sql->query(to_string(event->event.query.statement)))
+        if ((!db.empty() && !m_sql->query("USE " + db)) || !m_sql->query(stmt))
         {
+            MXB_ERROR("%s", m_sql->error().c_str());
             m_sql.reset();
             return false;
         }
@@ -74,7 +81,7 @@ bool SQLExecutor::commit_transaction()
 
     if (!rval)
     {
-        set_error(m_sql->error());
+        MXB_ERROR("%s", m_sql->error().c_str());
     }
 
     return rval;

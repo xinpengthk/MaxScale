@@ -11,6 +11,9 @@
  * Public License.
  */
 
+#define MXB_MODULE_NAME "Replicator"
+#include <maxbase/log.h>
+
 // The public header
 #include "replicator.hh"
 
@@ -74,8 +77,8 @@ public:
     // Stops a running replication stream
     void stop();
 
-    // Get error message
-    std::string error() const;
+    // Check if the replicator is still OK
+    bool ok() const;
 
     ~Imp();
 
@@ -89,7 +92,6 @@ private:
     bool connect();
     void process_events();
     bool process_one_event(Event& event);
-    void set_error(const std::string& err);
     bool commit_transactions();
     bool should_process(Event& event);
     bool should_commit();
@@ -97,7 +99,6 @@ private:
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
     std::atomic<bool>    m_running {true};      // Whether the stream is running
-    std::string          m_error;               // The latest error message
     std::string          m_gtid;                // GTID position to start from
     std::string          m_current_gtid;        // GTID of the transaction being processed
     mutable std::mutex   m_lock;
@@ -116,6 +117,7 @@ private:
 
 Replicator::Imp::Imp(const Config& cnf)
     : m_cnf(cnf)
+    , m_gtid(cnf.mariadb.gtid)
     , m_executor(cnf.cs.servers)
     , m_thr(std::thread(&Imp::process_events, this))
 {
@@ -130,16 +132,9 @@ void Replicator::Imp::stop()
     }
 }
 
-std::string Replicator::Imp::error() const
+bool Replicator::Imp::ok() const
 {
-    std::lock_guard<std::mutex> guard(m_lock);
-    return m_error;
-}
-
-void Replicator::Imp::set_error(const std::string& err)
-{
-    std::lock_guard<std::mutex> guard(m_lock);
-    m_error = err;
+    return m_running;
 }
 
 bool Replicator::Imp::connect()
@@ -158,7 +153,7 @@ bool Replicator::Imp::connect()
 
     if (!err.empty())
     {
-        set_error(err);
+        MXB_ERROR("%s", err.c_str());
     }
     else
     {
@@ -175,11 +170,11 @@ bool Replicator::Imp::connect()
 
         if (!m_sql->query(queries))
         {
-            set_error("Failed to prepare connection: " + m_sql->error());
+            MXB_ERROR("Failed to prepare connection: %s", m_sql->error().c_str());
         }
         else if (!m_sql->replicate(m_cnf.mariadb.server_id))
         {
-            set_error("Failed to open replication channel: " + m_sql->error());
+            MXB_ERROR("Failed to open replication channel: %s", m_sql->error().c_str());
         }
         else
         {
@@ -251,7 +246,7 @@ bool Replicator::Imp::commit_transactions()
 
     if (!rval)
     {
-        set_error("One or more transactions failed to commit at GTID " + m_current_gtid);
+        MXB_ERROR("One or more transactions failed to commit at GTID '%s'", m_current_gtid.c_str());
     }
 
     return rval;
@@ -339,7 +334,7 @@ bool Replicator::Imp::process_one_event(Event& event)
         }
         catch (mcsapi::ColumnStoreError& err)
         {
-            set_error(std::string("Could not open table: ") + err.what());
+            MXB_ERROR("Could not open table: %s", err.what());
             rval = false;
         }
         break;
@@ -411,9 +406,9 @@ void Replicator::stop()
     m_imp->stop();
 }
 
-std::string Replicator::error() const
+bool Replicator::ok() const
 {
-    return m_imp->error();
+    return m_imp->ok();
 }
 
 Replicator::~Replicator()
