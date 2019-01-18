@@ -65,7 +65,8 @@ private:
     Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
 
     // Processes all available rows and adds them to the bulk load
-    bool process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
+    bool     process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
+    uint8_t* process_numeric_field(int i, uint8_t type, uint8_t* ptr, const Bulk& b);
 
     std::vector<uint8_t> m_metadata;                // Table metadata
     std::vector<uint8_t> m_column_types;            // Column types in the table
