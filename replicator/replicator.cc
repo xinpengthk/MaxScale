@@ -125,11 +125,7 @@ Replicator::Imp::Imp(const Config& cnf)
 
 void Replicator::Imp::stop()
 {
-    if (m_running)
-    {
-        m_running = false;
-        m_thr.join();
-    }
+    m_running = false;
 }
 
 bool Replicator::Imp::ok() const
@@ -385,10 +381,8 @@ bool Replicator::Imp::process_one_event(Event& event)
 
 Replicator::Imp::~Imp()
 {
-    if (m_running)
-    {
-        stop();
-    }
+    m_running = false;
+    m_thr.join();
 }
 
 //

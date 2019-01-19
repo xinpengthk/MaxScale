@@ -21,7 +21,7 @@ int main(int argc, char** argv)
 
     auto rpl = cdc::Replicator::start(cnf);
 
-    while (true)
+    while (rpl->ok())
     {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
