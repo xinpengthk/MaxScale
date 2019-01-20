@@ -185,6 +185,8 @@ bool Replicator::Imp::connect()
         }
         else
         {
+            MXB_NOTICE("Started replicating from [%s]:%d at GTID '%s'", m_sql->server().host.c_str(),
+                       m_sql->server().port, m_gtid.c_str());
             rval = true;
         }
     }

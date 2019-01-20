@@ -13,8 +13,9 @@
 
 #include "sql.hh"
 
-SQL::SQL(MYSQL* mysql)
+SQL::SQL(MYSQL* mysql, const cdc::Server& server)
     : m_mysql(mysql)
+    , m_server(server)
 {
 }
 
@@ -48,14 +49,10 @@ std::pair<std::string, std::unique_ptr<SQL>> SQL::connect(const std::vector<cdc:
         else
         {
             // Successful connection
+            rval.reset(new SQL(mysql, server));
+            error.clear();
             break;
         }
-    }
-
-    if (mysql)
-    {
-        rval.reset(new SQL(mysql));
-        error.clear();
     }
 
     return {error, std::move(rval)};
@@ -107,6 +104,11 @@ std::string SQL::error() const
 int SQL::errnum() const
 {
     return mysql_errno(m_mysql);
+}
+
+const cdc::Server& SQL::server() const
+{
+    return m_server;
 }
 
 bool SQL::replicate(int server_id)

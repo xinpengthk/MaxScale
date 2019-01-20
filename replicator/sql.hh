@@ -65,6 +65,13 @@ public:
     int errnum() const;
 
     /**
+     * Return the server where the connection was created
+     *
+     * @return The server where the connection was created
+     */
+    const cdc::Server& server() const;
+
+    /**
      * Start replicating data from the server
      *
      * @param server_id Server ID to connect with
@@ -81,10 +88,11 @@ public:
     MARIADB_RPL_EVENT* fetch_event();
 
 private:
-    SQL(MYSQL* mysql);
+    SQL(MYSQL* mysql, const cdc::Server& server);
 
     MYSQL*       m_mysql {nullptr};     // Database handle
     MARIADB_RPL* m_rpl {nullptr};       // Replication handle
+    cdc::Server  m_server;              // The server where the connection was made
 };
 
 // String conversion helper
