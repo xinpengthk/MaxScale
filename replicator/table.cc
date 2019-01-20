@@ -92,8 +92,6 @@ bool Table::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 {
     bool rval = true;
 
-    // Open a new bulk insert for this batch of rows
-
     for (auto row : queue)
     {
         if (!process_row(row, m_bulk))
@@ -101,6 +99,8 @@ bool Table::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
             rval = false;
             break;
         }
+
+        m_bulk->writeRow();
     }
 
     return rval;
@@ -355,8 +355,6 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 
         metadata += metadata_length(m_column_types[i]);
     }
-
-    bulk->writeRow();
 
     return true;
 }
