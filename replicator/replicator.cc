@@ -262,10 +262,18 @@ bool Replicator::Imp::load_gtid_state()
             MXB_NOTICE("Continuing from GTID '%s'", m_gtid.c_str());
         }
     }
-    else if (errno != ENOENT)
+    else
     {
-        MXB_ERROR("Failed to load current GTID state from file '%s': %d, %s",
-                  filename.c_str(), errno, mxb_strerror(errno));
+        if (errno == ENOENT)
+        {
+            //  No GTID file, use the GTID provided in the configuration
+            rval = true;
+        }
+        else
+        {
+            MXB_ERROR("Failed to load current GTID state from file '%s': %d, %s",
+                      filename.c_str(), errno, mxb_strerror(errno));
+        }
     }
 
     return rval;
