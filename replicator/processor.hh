@@ -23,6 +23,8 @@
 #include <mysql.h>
 #include <mariadb_rpl.h>
 
+#include <maxbase/assert.h>
+
 /**
  * A class that handles processing of replicated events. The actual work is done by
  * subclasses that convert the events into other forms of data.
@@ -87,6 +89,7 @@ public:
 
     virtual ~REProc()
     {
+        mxb_assert(m_state != State::TRX);
         std::unique_lock<std::mutex> guard(m_process_lock);
         m_running = false;
         m_cv.notify_one();

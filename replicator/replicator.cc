@@ -98,7 +98,6 @@ private:
     bool save_gtid_state() const;
     bool commit_transactions();
     bool should_process(Event& event);
-    bool should_commit();
 
     bool set_state(State state);
 
@@ -111,9 +110,6 @@ private:
 
     // Map of active tables
     std::unordered_map<uint64_t, std::unique_ptr<Table>> m_tables;
-
-    // Processors participating in the transaction
-    std::unordered_set<REProc*> m_trx_participants;
 
     // SQL executor that handles query events
     SQLExecutor m_executor;
@@ -302,11 +298,11 @@ bool Replicator::Imp::save_gtid_state() const
 
 bool Replicator::Imp::commit_transactions()
 {
-    bool rval = true;
+    bool rval = m_executor.commit();
 
-    for (auto& t : m_trx_participants)
+    for (auto& t : m_tables)
     {
-        if (!t->commit())
+        if (!t.second->commit())
         {
             rval = false;
         }
@@ -320,8 +316,6 @@ bool Replicator::Imp::commit_transactions()
     {
         MXB_ERROR("One or more transactions failed to commit at GTID '%s'", m_current_gtid.c_str());
     }
-
-    m_trx_participants.clear();
 
     return rval;
 }
@@ -393,11 +387,6 @@ bool Replicator::Imp::should_process(Event& event)
     return rval;
 }
 
-bool Replicator::Imp::should_commit()
-{
-    return m_state == State::STMT || (Clock::now() - m_last_commit) > m_cnf.cs.flush_interval;
-}
-
 bool Replicator::Imp::process_one_event(Event& event)
 {
     bool rval = true;
@@ -414,7 +403,7 @@ bool Replicator::Imp::process_one_event(Event& event)
         break;
 
     case XID_EVENT:
-        if (should_commit() && (rval = commit_transactions()))
+        if ((rval = commit_transactions()))
         {
             m_gtid = m_current_gtid;
             m_last_commit = Clock::now();
@@ -438,7 +427,6 @@ bool Replicator::Imp::process_one_event(Event& event)
         if ((rval = set_state(State::STMT)))
         {
             m_executor.enqueue(event.release());
-            m_trx_participants.insert(&m_executor);
 
             if (m_implicit_commit)
             {
@@ -450,27 +438,14 @@ bool Replicator::Imp::process_one_event(Event& event)
         break;
 
     case WRITE_ROWS_EVENT_V1:
+    case UPDATE_ROWS_EVENT_V1:
+    case DELETE_ROWS_EVENT_V1:
         {
             const auto& t = m_tables[event->event.rows.table_id];
 
             if (t && (rval = set_state(State::BULK)))
             {
                 t->enqueue(event.release());
-                m_trx_participants.insert(t.get());
-            }
-        }
-        break;
-
-    case UPDATE_ROWS_EVENT_V1:
-    case DELETE_ROWS_EVENT_V1:
-        {
-            const auto& t = m_tables[event->event.rows.table_id];
-            auto state = m_cnf.mode == Operation::REPLICATE ? State::STMT : State::BULK;
-
-            if (t && (rval = set_state(state)))
-            {
-                t->enqueue(event.release());
-                m_trx_participants.insert(t.get());
             }
         }
         break;
