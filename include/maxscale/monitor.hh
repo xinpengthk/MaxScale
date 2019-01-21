@@ -335,6 +335,28 @@ void monitor_check_maintenance_requests(MXS_MONITOR* monitor);
 bool mon_status_changed(MXS_MONITORED_SERVER* mon_srv);
 bool mon_print_fail_status(MXS_MONITORED_SERVER* mon_srv);
 
+/**
+ * Ping or connect to a database. If connection does not exist or ping fails, a new connection
+ * is created. This will always leave a valid database handle in @c *ppCon, allowing the user
+ * to call MySQL C API functions to find out the reason of the failure.
+ *
+ * @param mon      A monitor.
+ * @param pServer  A server.
+ * @param ppCon    Address of pointer to a MYSQL instance. The instance should either be
+ *                 valid or NULL.
+ * @return Connection status.
+ */
+mxs_connect_result_t mon_ping_or_connect_to_db(const MXS_MONITOR& mon, SERVER& server, MYSQL** ppCon);
+
+/**
+ * Ping or connect to a database. If connection does not exist or ping fails, a new connection is created.
+ * This will always leave a valid database handle in the database->con pointer, allowing the user to call
+ * MySQL C API functions to find out the reason of the failure.
+ *
+ * @param mon Monitor
+ * @param database Monitored database
+ * @return Connection status.
+ */
 mxs_connect_result_t mon_ping_or_connect_to_db(MXS_MONITOR* mon, MXS_MONITORED_SERVER* database);
 bool                 mon_connection_is_ok(mxs_connect_result_t connect_result);
 void                 mon_log_connect_error(MXS_MONITORED_SERVER* database, mxs_connect_result_t rval);
