@@ -103,6 +103,8 @@ private:
     bool should_process(Event& event);
     bool should_commit();
 
+    bool set_state(State state);
+
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
     std::atomic<bool>    m_running {true};      // Whether the stream is running
@@ -112,6 +114,9 @@ private:
 
     // Map of active tables
     std::unordered_map<uint64_t, std::unique_ptr<Table>> m_tables;
+
+    // Processors participating in the transaction
+    std::unordered_set<REProc*> m_trx_participants;
 
     // SQL executor that handles query events
     SQLExecutor m_executor;
@@ -305,11 +310,11 @@ bool Replicator::Imp::save_gtid_state() const
 
 bool Replicator::Imp::commit_transactions()
 {
-    bool rval = m_executor.commit();
+    bool rval = true;
 
-    for (auto& t : m_tables)
+    for (auto& t : m_trx_participants)
     {
-        if (!t.second->commit())
+        if (!t->commit())
         {
             rval = false;
         }
@@ -322,6 +327,29 @@ bool Replicator::Imp::commit_transactions()
     else
     {
         MXB_ERROR("One or more transactions failed to commit at GTID '%s'", m_current_gtid.c_str());
+    }
+
+    m_trx_participants.clear();
+
+    return rval;
+}
+
+
+bool Replicator::Imp::set_state(State state)
+{
+    bool rval = false;
+
+    if (m_state != state)
+    {
+        if (commit_transactions())
+        {
+            m_state = state;
+            rval = true;
+        }
+    }
+    else
+    {
+        rval = true;
     }
 
     return rval;
@@ -415,16 +443,16 @@ bool Replicator::Imp::process_one_event(Event& event)
         break;
 
     case QUERY_EVENT:
-        m_state = State::STMT;
-        m_executor.enqueue(event.release());
-
-        if (m_implicit_commit)
+        if ((rval = set_state(State::STMT)))
         {
-            m_implicit_commit = false;
+            m_executor.enqueue(event.release());
+            m_trx_participants.insert(&m_executor);
 
-            if ((rval = commit_transactions()))
+            if (m_implicit_commit)
             {
+                m_implicit_commit = false;
                 m_gtid = m_current_gtid;
+                rval = commit_transactions();
             }
         }
         break;
@@ -433,10 +461,10 @@ bool Replicator::Imp::process_one_event(Event& event)
         {
             const auto& t = m_tables[event->event.rows.table_id];
 
-            if (t)
+            if (t && (rval = set_state(State::BULK)))
             {
-                m_state = State::BULK;
                 t->enqueue(event.release());
+                m_trx_participants.insert(t.get());
             }
         }
         break;
@@ -445,20 +473,12 @@ bool Replicator::Imp::process_one_event(Event& event)
     case DELETE_ROWS_EVENT_V1:
         {
             const auto& t = m_tables[event->event.rows.table_id];
+            auto state = m_cnf.mode == Operation::REPLICATE ? State::STMT : State::BULK;
 
-            if (t)
+            if (t && (rval = set_state(state)))
             {
-                if (m_cnf.mode == Operation::REPLICATE)
-                {
-                    // TODO: Convert to SQL and execute it
-                    m_state = State::STMT;
-                }
-                else
-                {
-                    mxb_assert(m_cnf.mode == Operation::TRANSFORM);
-                    m_state = State::BULK;
-                    t->enqueue(event.release());
-                }
+                t->enqueue(event.release());
+                m_trx_participants.insert(t.get());
             }
         }
         break;
