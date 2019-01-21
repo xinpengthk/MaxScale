@@ -36,17 +36,15 @@ public:
     static std::unique_ptr<Replicator> start(const Config& cnf);
 
     /**
-     * Stops a running replication stream
-     */
-    void stop();
-
-    /**
      * Check if the replicator is OK
      *
      * @return True if everything is OK. False if any errors have occurred and the replicator has stopped.
      */
     bool ok() const;
 
+    /**
+     * Destroys the Replicator and stops the processing of data
+     */
     ~Replicator();
 
 private:

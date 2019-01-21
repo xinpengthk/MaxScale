@@ -75,9 +75,6 @@ public:
     // Creates a new replication stream and starts it
     Imp(const Config& cnf);
 
-    // Stops a running replication stream
-    void stop();
-
     // Check if the replicator is still OK
     bool ok() const;
 
@@ -137,11 +134,6 @@ Replicator::Imp::Imp(const Config& cnf)
     , m_executor(cnf.cs.servers)
     , m_thr(std::thread(&Imp::process_events, this))
 {
-}
-
-void Replicator::Imp::stop()
-{
-    m_running = false;
 }
 
 bool Replicator::Imp::ok() const
@@ -505,11 +497,6 @@ Replicator::Imp::~Imp()
 std::unique_ptr<Replicator> Replicator::start(const Config& cnf)
 {
     return std::unique_ptr<Replicator>(new Replicator(cnf));
-}
-
-void Replicator::stop()
-{
-    m_imp->stop();
 }
 
 bool Replicator::ok() const
