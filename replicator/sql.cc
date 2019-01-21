@@ -58,11 +58,6 @@ std::pair<std::string, std::unique_ptr<SQL>> SQL::connect(const std::vector<cdc:
     return {error, std::move(rval)};
 }
 
-SQL::operator MYSQL*()
-{
-    return m_mysql;
-}
-
 bool SQL::query(const std::string& sql)
 {
     return mysql_query(m_mysql, sql.c_str()) == 0;

@@ -36,7 +36,6 @@ public:
      */
     static std::pair<std::string, std::unique_ptr<SQL>> connect(const std::vector<cdc::Server>& servers);
 
-    operator MYSQL*();
     ~SQL();
 
     /**
