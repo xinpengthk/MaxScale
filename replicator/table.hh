@@ -66,6 +66,7 @@ private:
 
     // Processes all available rows and adds them to the bulk load
     bool     process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
+    uint8_t* process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t* column_present, uint8_t* row);
     uint8_t* process_numeric_field(int i, uint8_t type, uint8_t* ptr, const Bulk& b);
 
     std::vector<uint8_t> m_metadata;                // Table metadata

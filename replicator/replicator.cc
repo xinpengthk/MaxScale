@@ -443,10 +443,23 @@ bool Replicator::Imp::process_one_event(Event& event)
 
     case UPDATE_ROWS_EVENT_V1:
     case DELETE_ROWS_EVENT_V1:
-        if (m_tables[event->event.rows.table_id])
         {
-            m_state = State::STMT;
-            // TODO: Convert to SQL and execute it
+            const auto& t = m_tables[event->event.rows.table_id];
+
+            if (t)
+            {
+                if (m_cnf.mode == Operation::REPLICATE)
+                {
+                    // TODO: Convert to SQL and execute it
+                    m_state = State::STMT;
+                }
+                else
+                {
+                    mxb_assert(m_cnf.mode == Operation::TRANSFORM);
+                    m_state = State::BULK;
+                    t->enqueue(event.release());
+                }
+            }
         }
         break;
 

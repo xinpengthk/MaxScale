@@ -99,8 +99,6 @@ bool Table::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
             rval = false;
             break;
         }
-
-        m_bulk->writeRow();
     }
 
     return rval;
@@ -225,9 +223,22 @@ uint8_t* Table::process_numeric_field(int i, uint8_t type, uint8_t* ptr, const B
 
 bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 {
-    uint8_t* metadata = m_metadata.data();
-    uint8_t* column_present = (uint8_t*)rows->event.rows.column_bitmap;
     uint8_t* row = (uint8_t*)rows->event.rows.row_data;
+    row = process_data(rows, bulk, (uint8_t*)rows->event.rows.column_bitmap, row);
+
+    if (rows->event.rows.type == UPDATE_ROWS)
+    {
+        m_bulk->writeRow();
+        process_data(rows, bulk, (uint8_t*)rows->event.rows.column_update_bitmap, row);
+    }
+
+    m_bulk->writeRow();
+    return true;
+}
+
+uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t* column_present, uint8_t* row)
+{
+    uint8_t* metadata = m_metadata.data();
     uint8_t* null_ptr = row;
     uint8_t offset = 1;
 
@@ -356,5 +367,5 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
         metadata += metadata_length(m_column_types[i]);
     }
 
-    return true;
+    return row;
 }

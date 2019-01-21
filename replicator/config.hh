@@ -29,6 +29,12 @@ struct Server
     std::string password;   // Password for the user
 };
 
+enum class Operation
+{
+    REPLICATE,  // "replicate" data by converting UPDATE/DELETE ROWS events into SQL statements
+    TRANSFORM   // Transform UPDATE/DELETE ROWS events into INSERT ROWS events
+};
+
 struct Config
 {
     // Replication configuration
@@ -47,5 +53,8 @@ struct Config
         std::string               xml;              // Path to Columnstore.xml
         std::chrono::milliseconds flush_interval;   // How often to flush per-table data to ColumnStore
     } cs;
+
+    // Global program options
+    Operation mode = Operation::REPLICATE;
 };
 }
