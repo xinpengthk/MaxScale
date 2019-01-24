@@ -12,6 +12,7 @@ using std::endl;
 int main(int argc, char** argv)
 {
     mxb::Log log(MXB_LOG_TARGET_STDOUT);
+    mxb_log_set_priority_enabled(LOG_INFO, true);
     cdc::Config cnf;
     cnf.cs.servers.push_back({"127.0.0.1", 3306, "maxuser", "maxpwd"});
     cnf.cs.xml = "./Columnstore.xml";

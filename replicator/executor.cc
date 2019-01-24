@@ -57,6 +57,7 @@ bool SQLExecutor::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 
         auto db = to_string(event->event.query.database);
         auto stmt = to_string(event->event.query.statement);
+        MXB_INFO("[%s] %s", db.c_str(), stmt.c_str());
 
         // This is probably quite close to what the server actually does to execute query events
         if ((!db.empty() && !m_sql->query("USE " + db)) || !m_sql->query(stmt))

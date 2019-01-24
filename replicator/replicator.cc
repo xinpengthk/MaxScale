@@ -30,6 +30,7 @@
 
 #include <mysql.h>
 #include <mariadb_rpl.h>
+#include <errmsg.h>
 
 #include <maxscale/query_classifier.hh>
 #include <maxscale/buffer.hh>
@@ -157,6 +158,7 @@ bool Replicator::Imp::connect()
     }
     else
     {
+        mxb_assert(m_sql);
         // Queries required to start GTID replication
         std::vector<std::string> queries =
         {
@@ -224,10 +226,15 @@ void Replicator::Imp::process_events()
                 }
             }
         }
+        else if (m_sql->errnum() == CR_SERVER_LOST)
+        {
+            // Network error, close the connection and connect again at the start of the next loop
+            m_sql.reset();
+        }
         else
         {
-            // Something went wrong, close the connection and connect again at the start of the next loop
-            m_sql.reset();
+            MXB_ERROR("Failed to read replicated event: %s", m_sql->error().c_str());
+            break;
         }
     }
 }
@@ -280,7 +287,7 @@ bool Replicator::Imp::save_gtid_state() const
     std::string filename = STATEFILE_DIR + STATEFILE_NAME;
     std::string tmpname = filename + STATEFILE_TMP_SUFFIX;
     std::ofstream statefile(tmpname);
-    statefile << m_gtid << std::endl;
+    statefile << m_current_gtid << std::endl;
 
     if (statefile)
     {
@@ -400,6 +407,7 @@ bool Replicator::Imp::process_one_event(Event& event)
         }
 
         m_current_gtid = to_gtid_string(*event);
+        MXB_INFO("GTID: %s", m_current_gtid.c_str());
         break;
 
     case XID_EVENT:
@@ -407,6 +415,7 @@ bool Replicator::Imp::process_one_event(Event& event)
         {
             m_gtid = m_current_gtid;
             m_last_commit = Clock::now();
+            MXB_INFO("XID for GTID '%s': %lu", m_current_gtid.c_str(), event->event.xid.transaction_nr);
         }
         break;
 
@@ -445,6 +454,7 @@ bool Replicator::Imp::process_one_event(Event& event)
 
             if (t && (rval = set_state(State::BULK)))
             {
+                MXB_INFO("ROWS event for `%s`.`%s`", t->db(), t->table());
                 t->enqueue(event.release());
             }
         }
