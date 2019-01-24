@@ -23,6 +23,8 @@
 class SQL
 {
 public:
+    using Row = std::vector<std::string>;
+    using Result = std::vector<Row>;
 
     /**
      * Create a new connection from a list of servers
@@ -48,6 +50,20 @@ public:
     bool query(const std::string& sql);
     bool query(const std::vector<std::string>& sql);
     bool query(const char* fmt, ...) __attribute((format(printf, 2, 3)));
+
+    /**
+     * Fetch all rows of a result set
+     *
+     * @return The rows of the result set
+     */
+    Result fetch();
+
+    /**
+     * Fetch one row of the result set
+     *
+     * @return A row of the result set
+     */
+    Row fetch_row();
 
     /**
      * Return latest error string
@@ -90,6 +106,7 @@ private:
     SQL(MYSQL* mysql, const cdc::Server& server);
 
     MYSQL*       m_mysql {nullptr};     // Database handle
+    MYSQL_RES*   m_res {nullptr};       // Open result set
     MARIADB_RPL* m_rpl {nullptr};       // Replication handle
     cdc::Server  m_server;              // The server where the connection was made
 };

@@ -21,6 +21,7 @@ SQL::SQL(MYSQL* mysql, const cdc::Server& server)
 
 SQL::~SQL()
 {
+    mysql_free_result(m_res);
     mariadb_rpl_close(m_rpl);
     mysql_close(m_mysql);
 }
@@ -60,6 +61,12 @@ std::pair<std::string, std::unique_ptr<SQL>> SQL::connect(const std::vector<cdc:
 
 bool SQL::query(const std::string& sql)
 {
+    if (m_res)
+    {
+        mysql_free_result(m_res);
+        m_res = nullptr;
+    }
+
     return mysql_query(m_mysql, sql.c_str()) == 0;
 }
 
@@ -67,7 +74,7 @@ bool SQL::query(const std::vector<std::string>& sql)
 {
     for (const auto& a : sql)
     {
-        if (mysql_query(m_mysql, a.c_str()))
+        if (!query(a.c_str()))
         {
             return false;
         }
@@ -89,6 +96,38 @@ bool SQL::query(const char* fmt, ...)
     va_end(args);
 
     return query(sql);
+}
+
+SQL::Row SQL::fetch_row()
+{
+    std::vector<std::string> rval;
+
+    if (m_res || (m_res = mysql_store_result(m_mysql)))
+    {
+        if (MYSQL_ROW row = mysql_fetch_row(m_res))
+        {
+            for (unsigned int i = 0; i < mysql_num_fields(m_res); i++)
+            {
+                rval.push_back(row[i] ? row[i] : "");
+            }
+        }
+    }
+
+    return rval;
+}
+
+SQL::Result SQL::fetch()
+{
+    std::vector<std::vector<std::string>> rval;
+    auto row = fetch_row();
+
+    while (!row.empty())
+    {
+        rval.push_back(row);
+        row = fetch_row();
+    }
+
+    return rval;
 }
 
 std::string SQL::error() const
