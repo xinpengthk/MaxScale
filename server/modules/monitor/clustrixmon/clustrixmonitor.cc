@@ -253,7 +253,7 @@ void ClustrixMonitor::update_cluster_nodes(MXS_MONITORED_SERVER& ms)
                     int mysql_port = row[2] ? atoi(row[2]) : DEFAULT_MYSQL_PORT;
                     int health_port = row[3] ? atoi(row[3]) : DEFAULT_HEALTH_PORT;
 
-                    string name = "@Clustrix-Server-" + std::to_string(id);
+                    string name = string("@@") + this->name + ":server-" + std::to_string(id);
 
                     auto nit = m_nodes.find(id);
                     auto mit = memberships.find(id);
