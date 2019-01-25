@@ -445,3 +445,148 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, Converter& conv, uint8_t* 
 
     return row;
 }
+
+std::vector<Table::Values> Table::get_delete_values(MARIADB_RPL_EVENT* event)
+{
+    uint8_t* row = (uint8_t*)event->event.rows.row_data;
+    uint8_t* end = (uint8_t*)event->event.rows.row_data + event->event.rows.row_data_size;
+    std::vector<Table::Values> rval;
+
+    while (row < end)
+    {
+        StringConverter conv;
+        row = process_data(event, conv, (uint8_t*)event->event.rows.column_bitmap, row);
+        rval.push_back(conv.values());
+    }
+    return rval;
+}
+
+std::vector<std::pair<Table::Values, Table::Values>> Table::get_update_values(MARIADB_RPL_EVENT* event)
+{
+    uint8_t* row = (uint8_t*)event->event.rows.row_data;
+    uint8_t* end = (uint8_t*)event->event.rows.row_data + event->event.rows.row_data_size;
+    std::vector<std::pair<Table::Values, Table::Values>> rval;
+
+    while (row < end)
+    {
+        StringConverter before;
+        StringConverter after;
+        row = process_data(event, before, (uint8_t*)event->event.rows.column_bitmap, row);
+        row = process_data(event, after, (uint8_t*)event->event.rows.column_update_bitmap, row);
+        rval.push_back({before.values(), after.values()});
+    }
+
+    return rval;
+}
+
+std::string Table::to_sql_delete(const SQL::Result& res, const Table::Values& values)
+{
+    std::stringstream ss;
+    ss << "DELETE FROM `" << m_database << "`.`" << m_table << "` WHERE ";
+
+    for (size_t i = 0; i < res.size(); i++)
+    {
+        mxb_assert(!res[i].empty());
+
+        if (i != 0)
+        {
+            ss << " AND ";
+        }
+
+        // Use IS instead of = when comparing fields to SQL NULLs
+        const char* operand = values[i] == "NULL" ? "IS" : "=";
+        ss << "`" << res[i][0] << "` " << operand << " " << values[i];
+    }
+
+    // Using the LIMIT 1 clause makes sure each row event targets only one record in the database
+    ss << " LIMIT 1";
+
+    return ss.str();
+}
+
+std::string Table::to_sql_update(const SQL::Result& res,
+                                 const Table::Values& before,
+                                 const Table::Values& after)
+{
+    std::stringstream ss;
+    ss << "UPDATE `" << m_database << "`.`" << m_table << "` SET ";
+
+    for (size_t i = 0; i < res.size(); i++)
+    {
+        mxb_assert(!res[i].empty());
+
+        if (i != 0)
+        {
+            ss << ",";
+        }
+
+        // Use IS instead of = when comparing fields to SQL NULLs
+        const char* operand = after[i] == "NULL" ? "IS" : "=";
+        ss << "`" << res[i][0] << "` " << operand << " " << after[i];
+    }
+
+    ss << " WHERE ";
+
+    for (size_t i = 0; i < res.size(); i++)
+    {
+        mxb_assert(!res[i].empty());
+
+        if (i != 0)
+        {
+            ss << " AND ";
+        }
+
+        // Use IS instead of = when comparing fields to SQL NULLs
+        const char* operand = before[i] == "NULL" ? "IS" : "=";
+        ss << "`" << res[i][0] << "` " << operand << " " << before[i];
+    }
+
+    // Using the LIMIT 1 clause makes sure each row event targets only one record in the database
+    ss << " LIMIT 1";
+
+    return ss.str();
+}
+
+bool Table::execute_as_sql(MARIADB_RPL_EVENT* row)
+{
+    bool rval = false;
+
+    // Get the field names from DESCRIBE
+    if (m_sql->query("DESCRIBE `%s`.`%s`", m_database.c_str(), m_table.c_str()))
+    {
+        // Combine the field names and extracted values into SQL statements
+        auto res = m_sql->fetch();
+        std::vector<std::string> statements;
+
+        if (row->event.rows.type == UPDATE_ROWS)
+        {
+            for (const auto& p : get_update_values(row))
+            {
+                statements.push_back(to_sql_update(res, p.first, p.second));
+                MXB_INFO("%s", statements.back().c_str());
+            }
+        }
+        else
+        {
+            mxb_assert(row->event.rows.type == DELETE_ROWS);
+            for (const auto& values : get_delete_values(row))
+            {
+                statements.push_back(to_sql_delete(res, values));
+                MXB_INFO("%s", statements.back().c_str());
+            }
+        }
+
+        // Execute the converted SQL statements
+        if (m_sql->query(statements))
+        {
+            rval = true;
+        }
+    }
+
+    if (!rval)
+    {
+        MXB_ERROR("%s", m_sql->error().c_str());
+    }
+
+    return rval;
+}

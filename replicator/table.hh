@@ -24,6 +24,7 @@
 
 #include "config.hh"
 #include "processor.hh"
+#include "sql.hh"
 
 using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
 
@@ -73,9 +74,24 @@ protected:
 
 private:
     using Driver = std::unique_ptr<mcsapi::ColumnStoreDriver>;
-    using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
+    using Values = std::vector<std::string>;
 
     Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
+
+    // Convert DELETE_ROWS into string values
+    std::vector<Values> get_delete_values(MARIADB_RPL_EVENT* row);
+
+    // Convert UPDATE_ROWS before and after image into string values
+    std::vector<std::pair<Values, Values>> get_update_values(MARIADB_RPL_EVENT* row);
+
+    // Converts DESCRIBE result and string values to SQL DELETE statement
+    std::string to_sql_delete(const SQL::Result& desc, const Values& values);
+
+    // Converts DESCRIBE result and string values to SQL UPDATE statement
+    std::string to_sql_update(const SQL::Result& desc, const Values& before, const Values& after);
+
+    // Executes given ROWS event as an SQL statement
+    bool execute_as_sql(MARIADB_RPL_EVENT* row);
 
     // Processes all available rows and adds them to the bulk load
     bool     process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
@@ -88,4 +104,5 @@ private:
     std::string          m_database;                // Database name where the table is located
     Driver               m_driver;                  // The ColumnStore API handle
     Bulk                 m_bulk;
+    std::unique_ptr<SQL> m_sql;     // Database connection, used only in replication mode
 };
