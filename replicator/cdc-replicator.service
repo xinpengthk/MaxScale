@@ -1,0 +1,16 @@
+[Unit]
+Description=MariaDB MaxScale CDC Data Replicator
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-abort
+
+# Use the same user as MaxScale (could use a separate user)
+User=maxscale
+Group=maxscale
+
+ExecStart=/usr/bin/cdc-replicator
+
+[Install]
+WantedBy=multi-user.target
