@@ -57,6 +57,16 @@ public:
      */
     static std::unique_ptr<Table> open(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
 
+    const char* db() const
+    {
+        return m_database.c_str();
+    }
+
+    const char* table() const
+    {
+        return m_table.c_str();
+    }
+
 protected:
     /**
      * Process all currently queued row events
@@ -77,6 +87,12 @@ private:
     using Values = std::vector<std::string>;
 
     Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
+
+    // Open a new bulk insert
+    bool open_bulk();
+
+    // Open a new SQL connection
+    bool open_sql();
 
     // Convert DELETE_ROWS into string values
     std::vector<Values> get_delete_values(MARIADB_RPL_EVENT* row);
@@ -104,5 +120,6 @@ private:
     std::string          m_database;                // Database name where the table is located
     Driver               m_driver;                  // The ColumnStore API handle
     Bulk                 m_bulk;
+    cdc::Config          m_cnf;
     std::unique_ptr<SQL> m_sql;     // Database connection, used only in replication mode
 };

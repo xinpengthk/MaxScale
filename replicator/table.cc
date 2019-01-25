@@ -107,6 +107,7 @@ Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     , m_database(table_map->event.table_map.database.str,
                  table_map->event.table_map.database.length)
     , m_driver(new mcsapi::ColumnStoreDriver(cnf.cs.xml))
+    , m_cnf(cnf)
 {
 }
 
@@ -116,13 +117,16 @@ std::unique_ptr<Table> Table::open(const cdc::Config& cnf, MARIADB_RPL_EVENT* ta
     return std::unique_ptr<Table>(new Table(cnf, table_map));
 }
 
-bool Table::start_transaction()
+bool Table::open_bulk()
 {
     bool rval = false;
 
     try
     {
-        m_bulk.reset(m_driver->createBulkInsert(m_database, m_table, 0, 0));
+        if (!m_bulk)
+        {
+            m_bulk.reset(m_driver->createBulkInsert(m_database, m_table, 0, 0));
+        }
         rval = true;
     }
     catch (const std::exception& ex)
@@ -133,14 +137,41 @@ bool Table::start_transaction()
     return rval;
 }
 
+bool Table::open_sql()
+{
+    std::string err;
+
+    if (!m_sql)
+    {
+        // Note: If this is done with multiple UMs the statements can be sent to two different servers
+        std::tie(err, m_sql) = SQL::connect(m_cnf.cs.servers);
+
+        if (!err.empty())
+        {
+            MXB_ERROR("%s", err.c_str());
+        }
+    }
+
+    return err.empty();
+}
+
+bool Table::start_transaction()
+{
+    // The transaction is started when the first event is processed
+    return true;
+}
+
 bool Table::commit_transaction()
 {
     bool rval = false;
 
     try
     {
-        m_bulk->commit();
-        m_bulk.reset();
+        if (m_bulk)
+        {
+            m_bulk->commit();
+            m_bulk.reset();
+        }
         rval = true;
     }
     catch (const std::exception& ex)
@@ -155,8 +186,11 @@ void Table::rollback_transaction()
 {
     try
     {
-        m_bulk->rollback();
-        m_bulk.reset();
+        if (m_bulk)
+        {
+            m_bulk->rollback();
+            m_bulk.reset();
+        }
     }
     catch (const std::exception& ex)
     {
@@ -296,20 +330,48 @@ uint8_t* Table::process_numeric_field(int i, uint8_t type, uint8_t* ptr, Convert
     return ptr;
 }
 
-
 bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
 {
+    bool rval = true;
     uint8_t* row = (uint8_t*)rows->event.rows.row_data;
-    row = process_data(rows, bulk, (uint8_t*)rows->event.rows.column_bitmap, row);
+    uint8_t* end = (uint8_t*)rows->event.rows.row_data + rows->event.rows.row_data_size;
+    BulkConverter conv(bulk);
 
-    if (rows->event.rows.type == UPDATE_ROWS)
+    // TODO: Add event metadata fields to the created table if required (GTID, event type etc.)
+
+    switch (rows->event.rows.type)
     {
-        m_bulk->writeRow();
-        process_data(rows, bulk, (uint8_t*)rows->event.rows.column_update_bitmap, row);
+    case DELETE_ROWS:
+    case UPDATE_ROWS:
+        // If we have an open bulk insert, we need to commit and close it to release the locks on the table
+        if (open_sql() && commit_transaction())
+        {
+            rval = execute_as_sql(rows);
+        }
+        else
+        {
+            rval = false;
+        }
+        break;
+
+    case WRITE_ROWS:
+        if (open_bulk())
+        {
+            while (row < end)
+            {
+                row = process_data(rows, conv, (uint8_t*)rows->event.rows.column_bitmap, row);
+                mxb_assert(row <= end);
+                m_bulk->writeRow();
+            }
+        }
+        else
+        {
+            rval = false;
+        }
+        break;
     }
 
-    m_bulk->writeRow();
-    return true;
+    return rval;
 }
 
 uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, Converter& conv, uint8_t* column_present, uint8_t* row)
@@ -556,7 +618,7 @@ bool Table::execute_as_sql(MARIADB_RPL_EVENT* row)
     {
         // Combine the field names and extracted values into SQL statements
         auto res = m_sql->fetch();
-        std::vector<std::string> statements;
+        std::vector<std::string> statements = {"BEGIN"};
 
         if (row->event.rows.type == UPDATE_ROWS)
         {
@@ -575,6 +637,8 @@ bool Table::execute_as_sql(MARIADB_RPL_EVENT* row)
                 MXB_INFO("%s", statements.back().c_str());
             }
         }
+
+        statements.push_back("COMMIT");
 
         // Execute the converted SQL statements
         if (m_sql->query(statements))
