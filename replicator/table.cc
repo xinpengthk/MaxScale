@@ -143,8 +143,7 @@ bool Table::open_sql()
 
     if (!m_sql)
     {
-        // Note: If this is done with multiple UMs the statements can be sent to two different servers
-        std::tie(err, m_sql) = SQL::connect(m_cnf.cs.servers);
+        std::tie(err, m_sql) = SQL::connect({m_cnf.cs.server});
 
         if (!err.empty())
         {

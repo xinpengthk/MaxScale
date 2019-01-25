@@ -49,7 +49,7 @@ struct Config
     // ColumnStore configuration
     struct
     {
-        std::vector<Server>       servers;          // List of UMs
+        Server                    server;           // The main UM
         std::string               xml;              // Path to Columnstore.xml
         std::chrono::milliseconds flush_interval;   // How often to flush per-table data to ColumnStore
     } cs;

@@ -138,7 +138,7 @@ const std::string Replicator::Imp::STATEFILE_TMP_SUFFIX = ".tmp";
 Replicator::Imp::Imp(const Config& cnf)
     : m_cnf(cnf)
     , m_gtid(cnf.mariadb.gtid)
-    , m_executor(cnf.cs.servers)
+    , m_executor({cnf.cs.server})
     , m_thr(std::thread(&Imp::process_events, this))
 {
 }
