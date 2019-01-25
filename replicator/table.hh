@@ -25,6 +25,19 @@
 #include "config.hh"
 #include "processor.hh"
 
+using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
+
+// Minimal interface for binlog to native type conversion
+class Converter
+{
+public:
+    virtual void setNull(int i) = 0;
+    virtual void setColumn(int i, int64_t t) = 0;
+    virtual void setColumn(int i, uint64_t t) = 0;
+    virtual void setColumn(int i, const std::string& t) = 0;
+    virtual void setColumn(int i, double t) = 0;
+};
+
 /**
  * A class that converts replicated row events into ColumnStore bulk API writes.
  */
@@ -66,8 +79,8 @@ private:
 
     // Processes all available rows and adds them to the bulk load
     bool     process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
-    uint8_t* process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t* column_present, uint8_t* row);
-    uint8_t* process_numeric_field(int i, uint8_t type, uint8_t* ptr, const Bulk& b);
+    uint8_t* process_data(MARIADB_RPL_EVENT* rows, Converter& t, uint8_t* column_present, uint8_t* row);
+    uint8_t* process_numeric_field(int i, uint8_t type, uint8_t* ptr, Converter& t);
 
     std::vector<uint8_t> m_metadata;                // Table metadata
     std::vector<uint8_t> m_column_types;            // Column types in the table

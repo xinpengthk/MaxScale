@@ -15,9 +15,85 @@
 
 #include "table.hh"
 
+#include <sstream>
+
 #include <maxscale/mysql_binlog.h>
 #include <maxbase/log.h>
 #include <maxbase/assert.h>
+
+class BulkConverter : public Converter
+{
+public:
+    BulkConverter(const Bulk& bulk)
+        : m_bulk(bulk)
+    {
+    }
+
+    void setNull(int i) override
+    {
+        m_bulk->setNull(i);
+    }
+
+    void setColumn(int i, int64_t t) override
+    {
+        m_bulk->setColumn(i, t);
+    }
+
+    void setColumn(int i, uint64_t t) override
+    {
+        m_bulk->setColumn(i, t);
+    }
+
+    void setColumn(int i, const std::string& t) override
+    {
+        m_bulk->setColumn(i, t);
+    }
+
+    void setColumn(int i, double t) override
+    {
+        m_bulk->setColumn(i, t);
+    }
+
+private:
+    const Bulk& m_bulk;
+};
+
+class StringConverter : public Converter
+{
+public:
+    void setNull(int i) override
+    {
+        m_values.push_back("NULL");
+    }
+
+    void setColumn(int i, int64_t t) override
+    {
+        m_values.push_back(std::to_string(t));
+    }
+
+    void setColumn(int i, uint64_t t) override
+    {
+        m_values.push_back(std::to_string(t));
+    }
+
+    void setColumn(int i, const std::string& t) override
+    {
+        m_values.push_back('\'' + t + '\'');
+    }
+
+    void setColumn(int i, double t) override
+    {
+        m_values.push_back(std::to_string(t));
+    }
+
+    const std::vector<std::string>& values() const
+    {
+        return m_values;
+    }
+
+private:
+    std::vector<std::string> m_values;
+};
 
 Table::Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map)
     : m_metadata(table_map->event.table_map.metadata.str,
@@ -181,36 +257,36 @@ int64_t get_byte(uint8_t* ptr, int bytes)
     }
 }
 
-uint8_t* Table::process_numeric_field(int i, uint8_t type, uint8_t* ptr, const Bulk& bulk)
+uint8_t* Table::process_numeric_field(int i, uint8_t type, uint8_t* ptr, Converter& c)
 {
     switch (type)
     {
-    case TABLE_COL_TYPE_LONG:
-        bulk->setColumn(i, get_byte4(ptr));
+    case MYSQL_TYPE_LONG:
+        c.setColumn(i, (int64_t)get_byte4(ptr));
         return ptr + 4;
 
-    case TABLE_COL_TYPE_FLOAT:
-        bulk->setColumn(i, *(float*)ptr);
+    case MYSQL_TYPE_FLOAT:
+        c.setColumn(i, *(float*)ptr);
         return ptr + 4;
 
-    case TABLE_COL_TYPE_INT24:
-        bulk->setColumn(i, get_byte3(ptr));
+    case MYSQL_TYPE_INT24:
+        c.setColumn(i, (int64_t)get_byte3(ptr));
         return ptr + 3;
 
-    case TABLE_COL_TYPE_LONGLONG:
-        bulk->setColumn(i, get_byte8(ptr));
+    case MYSQL_TYPE_LONGLONG:
+        c.setColumn(i, get_byte8(ptr));
         return ptr + 8;
 
-    case TABLE_COL_TYPE_DOUBLE:
-        bulk->setColumn(i, *(double*)ptr);
+    case MYSQL_TYPE_DOUBLE:
+        c.setColumn(i, *(double*)ptr);
         return ptr + 8;
 
-    case TABLE_COL_TYPE_SHORT:
-        bulk->setColumn(i, get_byte2(ptr));
+    case MYSQL_TYPE_SHORT:
+        c.setColumn(i, (int64_t)get_byte2(ptr));
         return ptr + 2;
 
-    case TABLE_COL_TYPE_TINY:
-        bulk->setColumn(i, (int8_t)*ptr);
+    case MYSQL_TYPE_TINY:
+        c.setColumn(i, (int64_t)(int8_t)*ptr);
         return ptr + 1;
 
     default:
@@ -236,7 +312,7 @@ bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
     return true;
 }
 
-uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t* column_present, uint8_t* row)
+uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, Converter& conv, uint8_t* column_present, uint8_t* row)
 {
     uint8_t* metadata = m_metadata.data();
     uint8_t* null_ptr = row;
@@ -253,7 +329,7 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
         {
             if (*null_ptr & offset)
             {
-                bulk->setNull(i);
+                conv.setNull(i);
             }
             else if (column_is_fixed_string(m_column_types[i]))
             {
@@ -263,7 +339,7 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                 {
                     uint8_t val[*(metadata + 1)];
                     uint64_t bytes = unpack_enum(row, metadata, val);
-                    bulk->setColumn(i, get_byte(row, std::min(bytes, 8UL)));
+                    conv.setColumn(i, get_byte(row, std::min(bytes, 8UL)));
                     row += bytes;
                 }
                 else
@@ -294,7 +370,7 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                         bytes = *row++;
                     }
 
-                    bulk->setColumn(i, std::string((char*)row, bytes));
+                    conv.setColumn(i, std::string((char*)row, bytes));
                     row += bytes;
                 }
             }
@@ -305,14 +381,14 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                 size_t bytes = len + bit_len;
 
                 // TODO: Figure out how this works
-                bulk->setColumn(i, 0xdead);
+                conv.setColumn(i, (int64_t)0xdead);
                 row += bytes;
             }
             else if (column_is_decimal(m_column_types[i]))
             {
                 double f_value = 0.0;
                 row += unpack_decimal_field(row, metadata, &f_value);
-                bulk->setColumn(i, f_value);
+                conv.setColumn(i, f_value);
             }
             else if (column_is_variable_string(m_column_types[i]))
             {
@@ -329,7 +405,7 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                     row++;
                 }
 
-                bulk->setColumn(i, std::string((char*)row, sz));
+                conv.setColumn(i, std::string((char*)row, sz));
                 row += sz;
             }
             else if (column_is_blob(m_column_types[i]))
@@ -337,7 +413,7 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                 uint8_t bytes = *metadata;
                 uint64_t len = get_byte(row, bytes);
                 row += bytes;
-                bulk->setColumn(i, std::string((char*)row, len));
+                conv.setColumn(i, std::string((char*)row, len));
                 row += len;
             }
             else if (column_is_temporal(m_column_types[i]))
@@ -346,12 +422,12 @@ uint8_t* Table::process_data(MARIADB_RPL_EVENT* rows, const Bulk& bulk, uint8_t*
                 struct tm tm;
                 row += unpack_temporal_value(m_column_types[i], row, metadata, 0, &tm);
                 format_temporal_value(buf, sizeof(buf), m_column_types[i], &tm);
-                bulk->setColumn(i, buf);
+                conv.setColumn(i, std::string(buf));
             }
             /** All numeric types (INT, LONG, FLOAT etc.) */
             else
             {
-                row = process_numeric_field(i, m_column_types[i], row, bulk);
+                row = process_numeric_field(i, m_column_types[i], row, conv);
             }
         }
 
