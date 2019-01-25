@@ -23,6 +23,9 @@
 class SQL
 {
 public:
+    SQL(const SQL&) = delete;
+    SQL& operator=(const SQL&) = delete;
+
     using Row = std::vector<std::string>;
     using Result = std::vector<Row>;
 
@@ -31,12 +34,16 @@ public:
      *
      * The first available server is chosen from the provided list
      *
-     * @param servers List of server candidates
+     * @param servers         List of server candidates
+     * @param connect_timeout Connect timeout in seconds, defaults to 10 seconds
+     * @param read_timeout    Read timeout in seconds, defaults to 5 seconds
      *
      * @return The error message and a unique_ptr. If an error occurred, the error string contains the
      *         error description and the unique_ptr is empty.
      */
-    static std::pair<std::string, std::unique_ptr<SQL>> connect(const std::vector<cdc::Server>& servers);
+    static std::pair<std::string, std::unique_ptr<SQL>> connect(const std::vector<cdc::Server>& servers,
+                                                                int connect_timeout = 30,
+                                                                int read_timeout = 60);
 
     ~SQL();
 
