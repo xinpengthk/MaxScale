@@ -87,6 +87,16 @@ public:
         return m_state == State::IDLE;
     }
 
+    void rollback()
+    {
+        std::lock_guard<std::mutex> guard(m_process_lock);
+
+        if (m_state == State::TRX)
+        {
+            rollback_transaction();
+        }
+    }
+
     virtual ~REProc()
     {
         mxb_assert(m_state != State::TRX);

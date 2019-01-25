@@ -352,6 +352,13 @@ void Replicator::Imp::process_events()
             break;
         }
     }
+
+    m_executor.rollback();
+
+    for (const auto& a : m_tables)
+    {
+        a.second->rollback();
+    }
 }
 
 std::string to_gtid_string(const MARIADB_RPL_EVENT& event)
@@ -482,9 +489,11 @@ bool Replicator::Imp::should_process(Event& event)
                 m_skip = event->event.gtid.flags & IMPLICIT_COMMIT_FLAG ? Skip::NEXT_STMT : Skip::NEXT_TRX;
                 MXB_INFO("Reached GTID '%s', skipping next transaction", m_gtid.c_str());
             }
-            else
+            else if (gtid_list_is_newer(m_gtid, {gtid}))
             {
-                mxb_assert(!gtid_list_is_newer(m_gtid, {gtid}));
+                MXB_ERROR("GTID '%s' is newer than '%s', cannot continue conversion process.",
+                          gtid.c_str(), m_gtid.c_str());
+                m_running = false;
             }
         }
         else if (m_skip == Skip::NEXT_STMT || (m_skip == Skip::NEXT_TRX && event->event_type == XID_EVENT))
