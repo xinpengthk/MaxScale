@@ -48,23 +48,66 @@ bool SQLExecutor::connect()
     return rval;
 }
 
+bool SQLExecutor::process_query(MARIADB_RPL_EVENT* event)
+{
+    bool rval = true;
+    auto db = to_string(event->event.query.database);
+    auto stmt = to_string(event->event.query.statement);
+    MXB_INFO("[%s] %s", db.c_str(), stmt.c_str());
+
+    // This is probably quite close to what the server actually does to execute query events
+    if ((!db.empty() && !m_sql->query("USE " + db)) || !m_sql->query(stmt))
+    {
+        MXB_ERROR("%s", m_sql->error().c_str());
+        m_sql.reset();
+        rval = false;
+    }
+
+    return rval;
+}
+
+bool SQLExecutor::process_uservar(MARIADB_RPL_EVENT* event)
+{
+    bool rval = true;
+
+    std::string name = to_string(event->event.uservar.name);
+    std::string value = event->event.uservar.is_null ? "NULL" : to_string(event->event.uservar.value);
+
+    if (!m_sql->query("SET @%s='%s'", name.c_str(), value.c_str()))
+    {
+        MXB_ERROR("%s", m_sql->error().c_str());
+        m_sql.reset();
+        rval = false;
+    }
+
+    return rval;
+}
+
 bool SQLExecutor::process(const std::vector<MARIADB_RPL_EVENT*>& queue)
 {
     // Database connection was created in SQLExecutor::start_transaction
     for (MARIADB_RPL_EVENT* event : queue)
     {
-        // TODO: Filter out ENGINE=... parts and index definitions from CREATE and ALTER statements
-
-        auto db = to_string(event->event.query.database);
-        auto stmt = to_string(event->event.query.statement);
-        MXB_INFO("[%s] %s", db.c_str(), stmt.c_str());
-
-        // This is probably quite close to what the server actually does to execute query events
-        if ((!db.empty() && !m_sql->query("USE " + db)) || !m_sql->query(stmt))
+        switch (event->event_type)
         {
-            MXB_ERROR("%s", m_sql->error().c_str());
-            m_sql.reset();
-            return false;
+        case QUERY_EVENT:
+            // TODO: Filter out ENGINE=... parts and index definitions from CREATE and ALTER statements
+            if (!process_query(event))
+            {
+                return false;
+            }
+            break;
+
+        case USER_VAR_EVENT:
+            if (process_uservar(event))
+            {
+                return false;
+            }
+            break;
+
+        default:
+            mxb_assert(!true);
+            break;
         }
     }
 

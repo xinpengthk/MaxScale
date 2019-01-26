@@ -583,6 +583,7 @@ bool Replicator::Imp::process_one_event(Event& event)
         break;
 
     case QUERY_EVENT:
+    case USER_VAR_EVENT:
         if ((rval = set_state(State::STMT)))
         {
             m_executor.enqueue(event.release());

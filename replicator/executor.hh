@@ -35,6 +35,8 @@ protected:
 
 private:
     bool connect();
+    bool process_query(MARIADB_RPL_EVENT* event);
+    bool process_uservar(MARIADB_RPL_EVENT* event);
 
     std::unique_ptr<SQL> m_sql;         // The current database connection
     cdc::Server          m_server;      // The ordered list of servers where the SQLExecutor connects to
