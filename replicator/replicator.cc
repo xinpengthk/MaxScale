@@ -114,6 +114,8 @@ private:
     Config               m_cnf;                 // The configuration the stream was started with
     std::unique_ptr<SQL> m_sql;                 // Database connection
     std::atomic<bool>    m_running {true};      // Whether the stream is running
+    std::atomic<bool>    m_should_stop {false}; // Set to true when doing a controlled shutdown
+    std::atomic<bool>    m_safe_to_stop {false};// Whether it safe to stop the processing
     std::string          m_gtid;                // GTID position to start from
     std::string          m_current_gtid;        // GTID of the transaction being processed
     mutable std::mutex   m_lock;
@@ -343,6 +345,26 @@ void Replicator::Imp::process_events()
         }
         else if (m_sql->errnum() == CR_SERVER_LOST)
         {
+            if (m_should_stop)
+            {
+                if (m_current_gtid == m_gtid)
+                {
+                    /**
+                     * The latest committed GTID points to the current GTID being processed,
+                     * no transaction in progress.
+                     */
+                    m_safe_to_stop = true;
+                }
+                else
+                {
+                    MXB_WARNING("Lost connection to server '%s:%d' when processing GTID '%s' while a "
+                                "controlled shutdown was in progress. Attempting to roll back partial "
+                                "transactions.", m_sql->server().host.c_str(), m_sql->server().port,
+                                m_current_gtid.c_str());
+                    m_running = false;
+                }
+            }
+
             // Network error, close the connection and connect again at the start of the next loop
             m_sql.reset();
         }
@@ -351,13 +373,23 @@ void Replicator::Imp::process_events()
             MXB_ERROR("Failed to read replicated event: %s", m_sql->error().c_str());
             break;
         }
+
+        if (m_safe_to_stop)
+        {
+            MXB_NOTICE("Stopped at GTID '%s'", m_gtid.c_str());
+            break;
+        }
     }
 
-    m_executor.rollback();
-
-    for (const auto& a : m_tables)
+    if (!m_running)
     {
-        a.second->rollback();
+        // Something went wrong, roll back any open transactions
+        m_executor.rollback();
+
+        for (const auto& a : m_tables)
+        {
+            a.second->rollback();
+        }
     }
 }
 
@@ -550,8 +582,22 @@ bool Replicator::Imp::process_one_event(Event& event)
 
     switch (event->event_type)
     {
+    case ROTATE_EVENT:
+        if (m_should_stop)
+        {
+            // Rotating to a new binlog file, a safe place to stop
+            m_safe_to_stop = true;
+        }
+        break;
+
     case GTID_EVENT:
-        if (event->event.gtid.flags & IMPLICIT_COMMIT_FLAG)
+        if (m_should_stop)
+        {
+            // Start of a new transaction, a safe place to stop
+            m_safe_to_stop = true;
+            break;
+        }
+        else if (event->event.gtid.flags & IMPLICIT_COMMIT_FLAG)
         {
             m_implicit_commit = true;
         }
@@ -566,6 +612,13 @@ bool Replicator::Imp::process_one_event(Event& event)
             m_gtid = m_current_gtid;
             m_last_commit = Clock::now();
             MXB_INFO("XID for GTID '%s': %lu", m_current_gtid.c_str(), event->event.xid.transaction_nr);
+
+            if (m_should_stop)
+            {
+                // End of a transaction, a safe place to stop
+                m_safe_to_stop = true;
+                break;
+            }
         }
         break;
 
@@ -621,7 +674,7 @@ bool Replicator::Imp::process_one_event(Event& event)
 
 Replicator::Imp::~Imp()
 {
-    m_running = false;
+    m_should_stop = true;
     m_thr.join();
 }
 
