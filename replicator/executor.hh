@@ -25,7 +25,7 @@
 class SQLExecutor : public REProc
 {
 public:
-    SQLExecutor(const std::vector<cdc::Server>& servers);
+    SQLExecutor(const cdc::Server& servers);
 
 protected:
     bool process(const std::vector<MARIADB_RPL_EVENT*>& queue) override;
@@ -36,6 +36,6 @@ protected:
 private:
     bool connect();
 
-    std::unique_ptr<SQL>     m_sql;     // The current database connection
-    std::vector<cdc::Server> m_servers; // The ordered list of servers where the SQLExecutor connects to
+    std::unique_ptr<SQL> m_sql;         // The current database connection
+    cdc::Server          m_server;      // The ordered list of servers where the SQLExecutor connects to
 };

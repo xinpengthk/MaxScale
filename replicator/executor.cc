@@ -17,8 +17,8 @@
 
 #include <maxbase/log.h>
 
-SQLExecutor::SQLExecutor(const std::vector<cdc::Server>& servers)
-    : m_servers(servers)
+SQLExecutor::SQLExecutor(const cdc::Server& servers)
+    : m_server(servers)
 {
 }
 
@@ -28,7 +28,7 @@ bool SQLExecutor::connect()
 
     if (!m_sql)
     {
-        auto res = SQL::connect(m_servers);
+        auto res = SQL::connect({m_server});
         m_sql = std::move(res.second);
 
         if (!m_sql)
