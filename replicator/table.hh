@@ -39,6 +39,15 @@ public:
     virtual void setColumn(int i, double t) = 0;
 };
 
+// Represents a row in a DESCRIBE result i.e. a field in a table
+struct Field
+{
+    std::string id;             // Field identifier
+    std::string type;           // Type of the field
+    std::string default_value;  // Field default value
+    bool        not_null;       // Set to true for NOT NULL fields
+};
+
 /**
  * A class that converts replicated row events into ColumnStore bulk API writes.
  */
@@ -66,6 +75,13 @@ public:
     {
         return m_table.c_str();
     }
+
+    /**
+     * Update table metadata by executing a DESCRIBE query
+     *
+     * @return True if the updating was successful
+     */
+    bool update_table_description();
 
 protected:
     /**
@@ -100,11 +116,11 @@ private:
     // Convert UPDATE_ROWS before and after image into string values
     std::vector<std::pair<Values, Values>> get_update_values(MARIADB_RPL_EVENT* row);
 
-    // Converts DESCRIBE result and string values to SQL DELETE statement
-    std::string to_sql_delete(const SQL::Result& desc, const Values& values);
+    // Converts string values to SQL DELETE statement
+    std::string to_sql_delete(const Values& values);
 
-    // Converts DESCRIBE result and string values to SQL UPDATE statement
-    std::string to_sql_update(const SQL::Result& desc, const Values& before, const Values& after);
+    // Converts string values to SQL UPDATE statement
+    std::string to_sql_update(const Values& before, const Values& after);
 
     // Executes given ROWS event as an SQL statement
     bool execute_as_sql(MARIADB_RPL_EVENT* row);
@@ -122,4 +138,5 @@ private:
     Bulk                 m_bulk;
     cdc::Config          m_cnf;
     std::unique_ptr<SQL> m_sql;     // Database connection, used only in replication mode
+    std::vector<Field>   m_fields;  // Field information from DESCRIBE table
 };
