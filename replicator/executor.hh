@@ -25,6 +25,9 @@
 class SQLExecutor : public REProc
 {
 public:
+    SQLExecutor(const SQLExecutor&) = delete;
+    SQLExecutor& operator=(const SQLExecutor&) = delete;
+
     SQLExecutor(const cdc::Server& servers);
 
 protected:

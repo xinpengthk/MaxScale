@@ -25,6 +25,8 @@ namespace cdc
 class Replicator
 {
 public:
+    Replicator(const Replicator&) = delete;
+    Replicator& operator=(const Replicator&) = delete;
 
     /**
      * Create a new data replicator
