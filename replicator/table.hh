@@ -26,7 +26,7 @@
 #include "processor.hh"
 #include "sql.hh"
 
-using Bulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
+using SBulk = std::unique_ptr<mcsapi::ColumnStoreBulkInsert>;
 
 // Minimal interface for binlog to native type conversion
 class Converter
@@ -99,7 +99,7 @@ protected:
     void rollback_transaction() override;
 
 private:
-    using Driver = std::unique_ptr<mcsapi::ColumnStoreDriver>;
+    using SDriver = std::unique_ptr<mcsapi::ColumnStoreDriver>;
     using Values = std::vector<std::string>;
 
     Table(const cdc::Config& cnf, MARIADB_RPL_EVENT* table_map);
@@ -126,7 +126,7 @@ private:
     bool execute_as_sql(MARIADB_RPL_EVENT* row);
 
     // Processes all available rows and adds them to the bulk load
-    bool     process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk);
+    bool     process_row(MARIADB_RPL_EVENT* rows, const SBulk& bulk);
     uint8_t* process_data(MARIADB_RPL_EVENT* rows, Converter& t, uint8_t* column_present, uint8_t* row);
     uint8_t* process_numeric_field(int i, uint8_t type, uint8_t* ptr, Converter& t);
 
@@ -134,8 +134,8 @@ private:
     std::vector<uint8_t> m_column_types;            // Column types in the table
     std::string          m_table;                   // Table name
     std::string          m_database;                // Database name where the table is located
-    Driver               m_driver;                  // The ColumnStore API handle
-    Bulk                 m_bulk;
+    SDriver              m_driver;                  // The ColumnStore API handle
+    SBulk                m_bulk;
     cdc::Config          m_cnf;
     std::unique_ptr<SQL> m_sql;     // Database connection, used only in replication mode
     std::vector<Field>   m_fields;  // Field information from DESCRIBE table

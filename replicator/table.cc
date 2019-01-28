@@ -24,7 +24,7 @@
 class BulkConverter : public Converter
 {
 public:
-    BulkConverter(const Bulk& bulk)
+    BulkConverter(const SBulk& bulk)
         : m_bulk(bulk)
     {
     }
@@ -55,7 +55,7 @@ public:
     }
 
 private:
-    const Bulk& m_bulk;
+    const SBulk& m_bulk;
 };
 
 class StringConverter : public Converter
@@ -331,7 +331,7 @@ uint8_t* Table::process_numeric_field(int i, uint8_t type, uint8_t* ptr, Convert
     return ptr;
 }
 
-bool Table::process_row(MARIADB_RPL_EVENT* rows, const Bulk& bulk)
+bool Table::process_row(MARIADB_RPL_EVENT* rows, const SBulk& bulk)
 {
     bool rval = true;
     uint8_t* row = (uint8_t*)rows->event.rows.row_data;

@@ -13,7 +13,7 @@ using std::endl;
 
 volatile sig_atomic_t running = 1;
 
-void set_signal(int sig, void(*handler)(int))
+void set_signal(int sig, void (* handler)(int))
 {
     struct sigaction sa = {};
     sa.sa_handler = handler;
@@ -31,9 +31,9 @@ void fatal_handler(int sig)
 
     MXB_ALERT("Received fatal signal %d", sig);
 
-    mxb::dump_stacktrace([](const char* symbol, const char* cmd){
-        MXB_ALERT("%s: %s", symbol, cmd);
-    });
+    mxb::dump_stacktrace([](const char* symbol, const char* cmd) {
+                             MXB_ALERT("%s: %s", symbol, cmd);
+                         });
 
     raise(sig);
 }
