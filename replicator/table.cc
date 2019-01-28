@@ -170,7 +170,6 @@ bool Table::commit_transaction()
         if (m_bulk)
         {
             m_bulk->commit();
-            m_bulk.reset();
         }
         rval = true;
     }
@@ -178,6 +177,8 @@ bool Table::commit_transaction()
     {
         MXB_ERROR("%s", ex.what());
     }
+
+    m_bulk.reset();
 
     return rval;
 }
