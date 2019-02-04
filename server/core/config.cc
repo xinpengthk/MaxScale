@@ -314,6 +314,7 @@ const MXS_MODULE_PARAM config_service_params[] =
     {CN_RETRY_ON_FAILURE,              MXS_MODULE_PARAM_BOOL,   "true"},
     {CN_SESSION_TRACK_TRX_STATE,       MXS_MODULE_PARAM_BOOL,   "false"},
     {CN_RETAIN_LAST_STATEMENTS,        MXS_MODULE_PARAM_COUNT,  "0"},
+    {CN_MONITOR,                       MXS_MODULE_PARAM_STRING},
     {NULL}
 };
 
@@ -1377,6 +1378,11 @@ std::unordered_set<CONFIG_CONTEXT*> get_dependencies(const std::vector<CONFIG_CO
         {
             rval.insert(name_to_object(objects, obj, name));
         }
+    }
+
+    if (type == CN_SERVICE && config_get_value(obj->parameters, CN_MONITOR))
+    {
+        rval.insert(name_to_object(objects, obj, config_get_string(obj->parameters, CN_MONITOR)));
     }
 
     if ((type == CN_MONITOR || type == CN_SERVICE) && config_get_value(obj->parameters, CN_SERVERS))
@@ -3691,6 +3697,22 @@ int create_new_service(CONFIG_CONTEXT* obj)
 
             if (!service->set_filters(flist))
             {
+                error_count++;
+            }
+        }
+
+        if (const char* zMonitor = config_get_value(obj->parameters, CN_MONITOR))
+        {
+            Monitor* pMonitor = monitor_find(zMonitor);
+
+            if (pMonitor)
+            {
+                service->m_monitor = pMonitor;
+            }
+            else
+            {
+                MXS_ERROR("Unable to find monitor '%s' that service '%s' refers to.",
+                          zMonitor, obj->object);
                 error_count++;
             }
         }

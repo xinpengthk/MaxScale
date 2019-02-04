@@ -16,6 +16,7 @@
 #include <set>
 #include <maxscale/json_api.h>
 #include "../../../core/internal/config_runtime.hh"
+#include "../../../core/internal/service.hh"
 
 namespace http = mxb::http;
 using namespace std;
@@ -335,6 +336,8 @@ void ClustrixMonitor::refresh_nodes()
                                                   health_check_threshold, pServer);
 
                                 m_nodes.insert(make_pair(id, node));
+
+                                service_add_server(this, pServer);
                             }
                             else
                             {
