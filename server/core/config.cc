@@ -227,6 +227,8 @@ static pcre2_code* compile_regex_string(const char* regex_string,
                                         bool jit_enabled,
                                         uint32_t options,
                                         uint32_t* output_ovector_size);
+static bool duration_is_valid(const char* zValue, mxs::config::DurationUnit* pUnit);
+
 
 int         config_get_ifaddr(unsigned char* output);
 static int  config_get_release_string(char* release);
@@ -1748,6 +1750,17 @@ uint64_t MXS_CONFIG_PARAMETER::get_size(const std::string& key) const
     MXB_AT_DEBUG(bool rval = ) get_suffixed_size(param_value.c_str(), &intval);
     mxb_assert(rval);
     return intval;
+}
+
+std::chrono::milliseconds
+MXS_CONFIG_PARAMETER::get_duration(const std::string& key,
+                                   mxs::config::DurationInterpretation interpretation) const
+{
+    string value = get_string(key);
+    std::chrono::milliseconds duration { 0 };
+    MXB_AT_DEBUG(bool rval = ) get_suffixed_duration(value.c_str(), interpretation, &duration);
+    mxb_assert(rval); // When this function is called, the validity of the value should have been checked.
+    return duration;
 }
 
 int64_t MXS_CONFIG_PARAMETER::get_enum(const std::string& key, const MXS_ENUM_VALUE* enum_mapping) const
@@ -4322,6 +4335,25 @@ bool config_param_is_valid(const MXS_MODULE_PARAM* params,
                 }
                 break;
 
+            case MXS_MODULE_PARAM_DURATION:
+                {
+                    mxs::config::DurationUnit unit;
+
+                    if (duration_is_valid(value, &unit))
+                    {
+                        valid = true;
+
+                        if (unit == mxs::config::DURATION_IN_DEFAULT)
+                        {
+                            MXS_WARNING("Specifying durations without a suffix denoting the unit "
+                                        "has been deprecated. Use the suffixes 'h' (hour), 'm' (minute) "
+                                        "'s' (second) or 'ms' (milliseconds). For instance, "
+                                        "1h, 60m, 60000s or 60000000ms.");
+                        }
+                    }
+                }
+                break;
+
             case MXS_MODULE_PARAM_BOOL:
                 if (config_truth_value(value) != -1)
                 {
@@ -4816,6 +4848,90 @@ bool get_suffixed_size(const char* value, uint64_t* dest)
     }
 
     return rval;
+}
+
+bool get_suffixed_duration(const char* zValue,
+                           mxs::config::DurationInterpretation interpretation,
+                           mxs::config::DurationUnit* pUnit,
+                           std::chrono::milliseconds* pDuration)
+{
+    if (!isdigit(*zValue))
+    {
+        // This will also catch negative values
+        return false;
+    }
+
+    bool rval = false;
+    char* zEnd;
+    uint64_t duration = strtoll(zValue, &zEnd, 10);
+    mxs::config::DurationUnit unit = mxs::config::DURATION_IN_DEFAULT;
+
+    switch (*zEnd)
+    {
+    case 'H':
+    case 'h':
+        unit = mxs::config::DURATION_IN_HOURS;
+        duration *= 60 * 60 * 1000;
+        ++zEnd;
+        break;
+
+    case 'M':
+    case 'm':
+        if (*(zEnd + 1) == 's' || *(zEnd + 1) == 'S')
+        {
+            unit = mxs::config::DURATION_IN_MILLISECONDS;
+            duration *= 1;
+            ++zEnd;
+        }
+        else
+        {
+            unit = mxs::config::DURATION_IN_MINUTES;
+            duration *= 60 * 1000;
+        }
+        ++zEnd;
+        break;
+
+    case 'S':
+    case 's':
+        unit = mxs::config::DURATION_IN_SECONDS;
+        duration *= 1000;
+        ++zEnd;
+        break;
+
+    case 0:
+        if (interpretation == mxs::config::INTERPRET_AS_SECONDS)
+        {
+            duration *= 1000;
+        }
+        break;
+
+    default:
+        break;
+    };
+
+    if (*zEnd == 0)
+    {
+        rval = true;
+
+        if (pDuration)
+        {
+            *pDuration = std::chrono::milliseconds(duration);
+        }
+
+        if (pUnit)
+        {
+            *pUnit = unit;
+        }
+    }
+
+    return rval;
+}
+
+static bool duration_is_valid(const char* zValue, mxs::config::DurationUnit* pUnit)
+{
+    // When the validity is checked, it does not matter how the value
+    // should be interpreted, so any mxs::config::DurationInterpretation is fine.
+    return get_suffixed_duration(zValue, mxs::config::INTERPRET_AS_SECONDS, pUnit, nullptr);
 }
 
 bool config_parse_disk_space_threshold(SERVER::DiskSpaceLimits* pDisk_space_threshold,
