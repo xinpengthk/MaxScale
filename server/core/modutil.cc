@@ -51,6 +51,28 @@ static void modutil_reply_routing_error(DCB* backend_dcb,
                                         char* errstr,
                                         uint32_t flags);
 
+constexpr bool is_little_endian()
+{
+#ifdef __GNUC__
+    return __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
+#else
+    return false;
+#endif
+}
+
+constexpr uint32_t get_byte3(uint8_t* ptr)
+{
+    /**
+     * Note: This function can read up to four bytes of data. It is mainly used to read the protocol
+     * packet headers and should only be used when the memory pointed to by `ptr` is at least four bytes.
+     */
+    return is_little_endian() ? ((*(uint32_t*)ptr) & 0x00ffffff) : gw_mysql_get_byte3(ptr);
+}
+
+constexpr uint16_t get_byte2(uint8_t* ptr)
+{
+    return is_little_endian() ? *(uint16_t*)ptr : gw_mysql_get_byte2(ptr);
+}
 
 /**
  * Check if a GWBUF structure is a MySQL COM_QUERY packet
@@ -557,9 +579,22 @@ static size_t get_complete_packets_length(GWBUF* buffer)
     size_t offset = 0;
     size_t total = 0;
 
-    while (buffer && gwbuf_copy_data(buffer, offset, 3, packet_len) == 3)
+    while (buffer)
     {
-        uint32_t len = gw_mysql_get_byte3(packet_len) + MYSQL_HEADER_LEN;
+        uint32_t len;
+
+        if (buflen >= MYSQL_HEADER_LEN)
+        {
+            len = get_byte3(GWBUF_DATA(buffer) + offset) + MYSQL_HEADER_LEN;
+        }
+        else if (gwbuf_copy_data(buffer, offset, 3, packet_len) == 3)
+        {
+            len = gw_mysql_get_byte3(packet_len) + MYSQL_HEADER_LEN;
+        }
+        else
+        {
+            break;
+        }
 
         if (len < buflen)
         {
@@ -658,11 +693,29 @@ int modutil_count_signal_packets(GWBUF* reply, int n_found, bool* more_out, modu
     while (offset < len)
     {
         num_packets++;
-        uint8_t header[MYSQL_HEADER_LEN + 5];   // Maximum size of an EOF packet
+        uint32_t payloadlen;
+        uint8_t command;
+        uint16_t status;      // Two byte server status
 
-        gwbuf_copy_data(reply, offset, MYSQL_HEADER_LEN + 1, header);
+        if (GWBUF_LENGTH(reply) - offset >= MYSQL_HEADER_LEN + 5)
+        {
+            payloadlen = get_byte3(GWBUF_DATA(reply) + offset);
+            command = MYSQL_GET_COMMAND(GWBUF_DATA(reply) + offset);
+            status = get_byte2(GWBUF_DATA(reply) + MYSQL_HEADER_LEN + 1 + 2 + offset);
+        }
+        else
+        {
+            uint8_t header[MYSQL_HEADER_LEN + 5];   // Maximum size of an EOF packet
+            gwbuf_copy_data(reply, offset, sizeof(header), header);
+            payloadlen = get_byte3(header);
+            command = MYSQL_GET_COMMAND(header);
 
-        unsigned int payloadlen = MYSQL_GET_PAYLOAD_LEN(header);
+            if (command == MYSQL_REPLY_EOF && payloadlen + MYSQL_HEADER_LEN == MYSQL_EOF_PACKET_LEN)
+            {
+                status = get_byte2(header + MYSQL_HEADER_LEN + 1 + 2);
+            }
+        }
+
         unsigned int pktlen = payloadlen + MYSQL_HEADER_LEN;
 
         if (payloadlen == GW_MYSQL_MAX_PACKET_LEN)
@@ -677,8 +730,6 @@ int modutil_count_signal_packets(GWBUF* reply, int n_found, bool* more_out, modu
         }
         else
         {
-            uint8_t command = MYSQL_GET_COMMAND(header);
-
             if (command == MYSQL_REPLY_ERR)
             {
                 /** Any errors in the packet stream mean that the result set
@@ -692,9 +743,7 @@ int modutil_count_signal_packets(GWBUF* reply, int n_found, bool* more_out, modu
                 eof++;
                 only_ok = false;
 
-                uint8_t status[2];      // Two byte server status
-                gwbuf_copy_data(reply, offset + MYSQL_HEADER_LEN + 1 + 2, sizeof(status), status);
-                more = gw_mysql_get_byte2(status) & SERVER_MORE_RESULTS_EXIST;
+                more = status & SERVER_MORE_RESULTS_EXIST;
 
                 /**
                  * MySQL 5.6 and 5.7 have a "feature" that doesn't set
@@ -704,7 +753,7 @@ int modutil_count_signal_packets(GWBUF* reply, int n_found, bool* more_out, modu
                  * the information from the first EOF packet until we process
                  * the second EOF packet.
                  */
-                if (gw_mysql_get_byte2(status) & SERVER_PS_OUT_PARAMS)
+                if (status & SERVER_PS_OUT_PARAMS)
                 {
                     internal_state |= PS_OUT_PARAM;
                 }
