@@ -1128,8 +1128,11 @@ int open_network_socket(enum mxs_socket_type type,
 static bool configure_unix_socket(int so)
 {
     int one = 1;
+    int sndbufsize = MXS_SO_SNDBUF_SIZE;
 
-    if (setsockopt(so, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) != 0)
+    // Note: SO_RCVBUF has no effect on UNIX domain sockets (see unix(7))
+    if (setsockopt(so, SOL_SOCKET, SO_SNDBUF, &sndbufsize, sizeof(sndbufsize)) != 0
+        || setsockopt(so, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) != 0)
     {
         MXS_ERROR("Failed to set socket option: %d, %s.", errno, mxs_strerror(errno));
         return false;
