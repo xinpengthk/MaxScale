@@ -1,7 +1,7 @@
 /**
- * @file mm test of multi master monitor
+ * @file mm test of mariadbmon in a multimaster situation
  *
- * - us 'mmmon' module as a monitor
+ * - use mariadbmon as monitor
  * - reset master, stop slaves, stop all nodes
  * - start 2 nodes
  * - execute SET MASTER TO on node0 to point to node1 and on node1 to point to node0
