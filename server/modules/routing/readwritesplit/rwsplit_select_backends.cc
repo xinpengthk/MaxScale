@@ -431,7 +431,9 @@ bool RWSplit::select_connect_backend_servers(MXS_SESSION* session,
 
     mxb_assert(slaves_connected <= max_nslaves || max_nslaves == 0);
 
-    SRWBackendVector candidates;
+    thread_local SRWBackendVector candidates;
+    candidates.clear();
+
     for (auto& sBackend : backends)
     {
         if (!sBackend->in_use()

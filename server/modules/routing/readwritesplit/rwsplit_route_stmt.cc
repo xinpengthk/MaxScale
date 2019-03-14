@@ -267,9 +267,9 @@ bool RWSplitSession::route_single_stmt(GWBUF* querybuf)
                 bool is_sql = command == MXS_COM_QUERY || command == MXS_COM_STMT_EXECUTE;
                 if (is_sql)
                 {
-                    target->select_started();
+                    //target->select_started();
 
-                    target->response_stat().query_started();
+                    //target->response_stat().query_started();
 
                     if (m_config.retry_failed_reads)
                     {
@@ -655,7 +655,8 @@ SRWBackend RWSplitSession::get_slave_backend(int max_rlag)
 {
     // create a list of useable backends (includes masters, function name is a bit off),
     // then feed that list to compare.
-    SRWBackendVector candidates;
+    thread_local SRWBackendVector candidates;
+    candidates.clear();
     auto counts = get_slave_counts(m_backends, m_current_master);
 
     for (auto& backend : m_backends)

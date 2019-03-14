@@ -122,10 +122,10 @@ void RWSplitSession::close()
                                         stat.num_samples());
         }
         backend->response_stat().reset();
-
-        m_server_stats[backend->server()].end_session(backend->session_timer().split(),
-                                                      backend->select_timer().total(),
-                                                      backend->num_selects());
+//
+//        m_server_stats[backend->server()].end_session(backend->session_timer().split(),
+//                                                      backend->select_timer().total(),
+//                                                      backend->num_selects());
     }
 }
 
@@ -625,7 +625,7 @@ void RWSplitSession::clientReply(GWBUF* writebuf, DCB* backend_dcb)
         /** Got a complete reply, decrement expected response count */
         m_expected_responses--;
 
-        session_book_server_response(m_pSession, backend->backend()->server, m_expected_responses == 0);
+        //session_book_server_response(m_pSession, backend->backend()->server, m_expected_responses == 0);
 
         mxb_assert(m_expected_responses >= 0);
         mxb_assert(backend->get_reply_state() == REPLY_STATE_DONE);
@@ -648,16 +648,16 @@ void RWSplitSession::clientReply(GWBUF* writebuf, DCB* backend_dcb)
             return;
         }
 
-        ResponseStat& stat = backend->response_stat();
-        stat.query_ended();
-        if (stat.is_valid() && (stat.sync_time_reached()
-                                || server_response_time_num_samples(backend->server()) == 0))
-        {
-            server_add_response_average(backend->server(),
-                                        stat.average().secs(),
-                                        stat.num_samples());
-            stat.reset();
-        }
+//        ResponseStat& stat = backend->response_stat();
+//        stat.query_ended();
+//        if (stat.is_valid() && (stat.sync_time_reached()
+//                                || server_response_time_num_samples(backend->server()) == 0))
+//        {
+//            server_add_response_average(backend->server(),
+//                                        stat.average().secs(),
+//                                        stat.num_samples());
+//            stat.reset();
+//        }
 
         if (m_config.causal_reads)
         {
@@ -673,7 +673,7 @@ void RWSplitSession::clientReply(GWBUF* writebuf, DCB* backend_dcb)
             session_set_load_active(m_pSession, true);
         }
 
-        backend->select_ended();
+//        backend->select_ended();
 
         if (m_otrx_state == OTRX_ROLLBACK)
         {
