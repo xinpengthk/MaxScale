@@ -223,15 +223,20 @@ query will be routed to the first available server. This possibly returns an
 error about database rights instead of a missing database.
 
 * Prepared statement support is limited. PREPARE, EXECUTE and DEALLOCATE are routed to the
-correct backend. EXECUTE IMMEADIATE is not supported.
+correct backend. EXECUTE IMMEADIATE is routed to the first available backend and may give
+wront results.
 
 * `SHOW DATABASES` is handled by the router instead of routed to a server. The router only
 answers correctly to the basic version of the query. Any modifiers such as `LIKE` are
 ignored.
 
 * `SHOW TABLES` is routed to the server with the current database. If using table-level
-sharding, the results will be incomplete. Use `SHOW SHARDS` to get results from the router
-itself.
+sharding, the results will be incomplete. Similarly, `SHOW TABLES FROM db1` is routed to
+the server with database `db1`, ignoring table sharding. Use `SHOW SHARDS` to get results
+from the router itself.
+
+* `USE db1` is routed to the server with `db1`. If the database is divided to multiple
+servers, only one server will get the command.
 
 ## Examples
 
